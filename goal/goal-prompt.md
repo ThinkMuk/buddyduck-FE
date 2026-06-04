@@ -11,7 +11,7 @@
 - CB-01 Login, CB-02 Nickname, CB-03 Home, CB-04 Room List, CB-04′ Tag Modal, CB-05 Create Room, CB-06 My Rooms, CB-07A Host, CB-07B Member, CB-07C Pending, CB-07D Visitor, CB-07D′ Apply Modal, CB-08 Open Chat, CB-09 Timeline, CB-10 Place Search, CB-11 Timetable Edit, CB-11′ Over-Time Warning, CB-12 Map View, CB-13 Memory Feed, CB-14 Profile, CB-14′ Profile Edit 화면을 모두 접근 가능하게 구현한다.
 - 주요 버튼, 탭, 모달, 폼 상태, 일정/지도 fallback 상호작용을 최소 동작하게 만든다.
 - 새 컴포넌트를 만들면 `dev/AGENTS.md`에 목록과 용도를 추가한다.
-- 디자인 스펙을 변경해야 하는 경우에만 `design/AGENTS.md`를 업데이트한다.
+- 디자인 스펙을 변경해야 하는 경우에만 `design/AGENTS.md` 및 `design/CLAUDE.md`에 업데이트한다.
 
 작업 순서:
 1. foundation: 프로젝트 스캐폴딩, 패키지 설치, Tailwind/global CSS, 앱 shell, 모바일 프레임
