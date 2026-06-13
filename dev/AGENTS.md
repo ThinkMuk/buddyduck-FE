@@ -1,10 +1,10 @@
-# Development Conventions — Buddy Duck FE
+# Development Conventions — BuddyDuck FE
 
 ## Stack
 
 - Next.js App Router + React + TypeScript
-- Tailwind CSS with global Concert Buddy design tokens
-- shadcn/ui primitives wrapped by Buddy Duck components
+- Tailwind CSS with global BuddyDuck design tokens
+- shadcn/ui primitives wrapped by BuddyDuck components
 - TanStack Query v5 for query boundaries
 - Zustand for local UI state
 - MSW for API mock handlers
@@ -29,11 +29,12 @@
 
 - `AppShell`: centered 430px app container, page padding, safe bottom spacing, and optional bottom navigation.
 - `AppBar`: top navigation bar with centered title and left/right icon actions.
-- `BottomNav`: 4-tab app navigation for home, rooms, my rooms, and profile.
-- `Button`: Buddy Duck wrapper over shadcn `Button`; primary, outline, kakao, danger, small, and icon variants.
+- `BottomNav`: 3-tab app navigation for home, my rooms, and profile.
+- `Button`: BuddyDuck wrapper over shadcn `Button`; primary, outline, kakao, danger, small, and icon variants.
 - `Chip` / `Badge` / `Tag`: selectable filters and compact metadata badges using shadcn badge-compatible styling.
 - `FormField`: shared label, input, textarea, helper, and error state patterns over shadcn form/input primitives.
-- `Modal` / `Dialog` / `Sheet`: Buddy Duck modal surfaces over shadcn dialog/sheet primitives.
+- `Skeleton`: loading placeholder using surface-2 shimmer animation.
+- `Modal` / `Dialog` / `Sheet`: BuddyDuck modal surfaces over shadcn dialog/sheet primitives.
 - `Card`: shared elevated surface using design token radius, border, and shadow over shadcn card primitives.
 - `RoomCard`: room list/detail summary card.
 - `ConcertCard`: concert feed card with thumbnail, title, date, and venue metadata.
@@ -41,6 +42,7 @@
 - `MapFallback`, `MapPin`, `MapPlaceCard`: Kakao Maps fallback and read-only map UI pieces.
 - `Avatar` / `MemberRow`: member identity row with host, pending, and participant states.
 - `Stepper`: compact minus/value/plus control for timetable dwell and route durations.
+- `BackButton`, `SectionTitle`, `InfoRow`: small navigation, section labeling, and compact key-value helpers used by screen patterns.
 
 ## Mock/API Boundary
 

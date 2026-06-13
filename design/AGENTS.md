@@ -1,4 +1,4 @@
-# Design System — Concert Buddy
+# Design System — BuddyDuck
 
 Hi-Fi 디자인 파일: `design/Concert Buddy - Hi-Fi UI.html`
 화면 범위: CB-01 ~ CB-14′ (총 21개 화면)
@@ -170,8 +170,8 @@ Hi-Fi 디자인 파일: `design/Concert Buddy - Hi-Fi UI.html`
 | ID      | 이름                  | 비고                      |
 | ------- | --------------------- | ------------------------- |
 | CB-01   | Login                 | 카카오 로그인             |
-| CB-02   | Nickname              | 닉네임 설정               |
-| CB-03   | Home                  | 콘서트 피드 + 트렌딩 태그 |
+| CB-02   | Nickname              | 닉네임·연령대·성별 필수   |
+| CB-03   | Home                  | 콘서트 피드 + 카테고리 필터 |
 | CB-04   | Room List             | 동행 방 목록              |
 | CB-04′  | Tag Modal             | 태그 필터 모달            |
 | CB-05   | Create Room           | 방 개설                   |
