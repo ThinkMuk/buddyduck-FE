@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SCREEN_ROUTES, getScreenById, resolveScreenFromSlug } from "./routes";
 
 describe("screen route registry", () => {
-  it("exposes every requested Buddy Duck screen exactly once", () => {
+  it("exposes every requested BuddyDuck screen exactly once", () => {
     expect(SCREEN_ROUTES.map((screen) => screen.id)).toEqual([
       "CB-01",
       "CB-02",
@@ -29,8 +29,11 @@ describe("screen route registry", () => {
   });
 
   it("maps canonical slugs and modal query states to screens", () => {
+    expect(resolveScreenFromSlug([], {}).id).toBe("CB-01");
+    expect(resolveScreenFromSlug(["unknown"], {}).id).toBe("CB-01");
     expect(resolveScreenFromSlug(["rooms"], {}).id).toBe("CB-04");
     expect(resolveScreenFromSlug(["rooms"], { modal: "tags" }).id).toBe("CB-04prime");
+    expect(resolveScreenFromSlug(["rooms", "member"], { modal: "open-chat" }).id).toBe("CB-08");
     expect(resolveScreenFromSlug(["rooms", "visitor"], { modal: "apply" }).id).toBe("CB-07Dprime");
     expect(resolveScreenFromSlug(["timetable"], { modal: "warning" }).id).toBe("CB-11prime");
     expect(resolveScreenFromSlug(["profile", "edit"], {}).id).toBe("CB-14prime");
