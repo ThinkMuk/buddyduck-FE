@@ -9,7 +9,7 @@ export default tseslint.config(
   ...nextVitals,
   ...nextTs,
   {
-    ignores: [".next/**", "node_modules/**", "coverage/**"]
+    ignores: [".next/**", "node_modules/**", "coverage/**", "public/mockServiceWorker.js"]
   },
   {
     rules: {

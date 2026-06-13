@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Pretendard";
+  src: url("/fonts/pretendard/PretendardVariable.woff2") format("woff2");
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --cb-stage: #070708;
   --cb-bg: #0e0e10;
@@ -26,6 +34,25 @@
   --sh-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.7);
   --sh-pop: 0 24px 60px -20px rgba(0, 0, 0, 0.85);
   --sh-glow: 0 6px 22px -6px rgba(253, 190, 13, 0.45);
+  --background: var(--cb-bg);
+  --foreground: var(--cb-text);
+  --card: var(--cb-surface-1);
+  --card-foreground: var(--cb-text);
+  --popover: var(--cb-surface-1);
+  --popover-foreground: var(--cb-text);
+  --primary: var(--cb-yellow);
+  --primary-foreground: var(--cb-on-yellow);
+  --secondary: var(--cb-surface-2);
+  --secondary-foreground: var(--cb-text);
+  --muted: var(--cb-surface-2);
+  --muted-foreground: var(--cb-text-2);
+  --accent: var(--cb-yellow-dim);
+  --accent-foreground: var(--cb-yellow-2);
+  --destructive: var(--cb-danger);
+  --border: var(--cb-line);
+  --input: var(--cb-surface-2);
+  --ring: var(--cb-yellow-line);
+  --radius: var(--r-md);
   --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR",
     "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
@@ -66,70 +93,31 @@ button {
 }
 
 .app-stage {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
-  padding: 24px 12px;
+  padding: 0;
   background:
     radial-gradient(520px 340px at 16% 0%, rgba(253, 190, 13, 0.12), transparent 62%),
     radial-gradient(480px 260px at 100% 0%, rgba(255, 210, 63, 0.06), transparent 60%),
     var(--cb-stage);
 }
 
-.device {
-  width: min(100vw - 24px, 375px);
-  height: min(812px, calc(100vh - 48px));
-  min-height: 720px;
-  border-radius: 42px;
-  padding: 5px;
-  background: linear-gradient(#202024, #0c0c0d);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 40px 80px -30px rgba(0, 0, 0, 0.9),
-    var(--sh-glow);
-}
-
 .screen {
   position: relative;
-  height: 100%;
-  overflow: hidden;
+  width: 100%;
+  max-width: 430px;
+  min-height: 100dvh;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  border-radius: 38px;
   background: var(--cb-bg);
 }
 
-.notch {
-  position: absolute;
-  z-index: 30;
-  top: 11px;
-  left: 50%;
-  width: 108px;
-  height: 30px;
-  transform: translateX(-50%);
-  border-radius: var(--r-pill);
-  background: #000;
-}
-
-.statusbar {
-  height: 50px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  flex: 0 0 auto;
-  padding: 0 26px 7px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .body-scroll {
-  min-height: 0;
   flex: 1 1 auto;
-  overflow: auto;
   padding: 2px 16px 18px;
-  scrollbar-width: none;
-}
-
-.body-scroll::-webkit-scrollbar {
-  width: 0;
+  overflow-y: auto;
 }
 
 .surface-card {
@@ -155,6 +143,25 @@ button {
   background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.024) 0 1px, transparent 1px 10px);
 }
 
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--cb-surface-2);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+.sheet-enter {
+  animation: sheet-up 200ms ease-out;
+}
+
 .map-grid {
   background:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
@@ -166,4 +173,28 @@ button {
 
 .text-balance {
   text-wrap: balance;
+}
+
+.login-hero {
+  background:
+    radial-gradient(340px 240px at 50% 18%, rgba(253, 190, 13, 0.16), transparent 64%),
+    radial-gradient(260px 180px at 88% 8%, rgba(255, 210, 63, 0.08), transparent 62%),
+    linear-gradient(180deg, #121214 0%, var(--cb-bg) 58%);
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
