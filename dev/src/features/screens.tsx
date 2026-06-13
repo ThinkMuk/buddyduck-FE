@@ -1,77 +1,145 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  ArrowLeft,
-  Bell,
-  CalendarDays,
   Camera,
   Check,
-  ChevronRight,
-  Clock3,
-  Filter,
+  ChevronDown,
+  GripVertical,
+  Info,
   Lock,
+  LogOut,
   MapPin,
   MessageCircle,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
-  Send,
   Settings2,
-  Star,
-  X
+  Share2,
+  Star
 } from "lucide-react";
 import { addMinutes, format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { useConcerts, useCreateRoomMutation, useRooms } from "@/lib/api";
+import { useCreateRoomMutation, useRooms } from "@/lib/api";
 import {
   calculateTimetableLoad,
   concerts as fallbackConcerts,
+  getConcert,
+  getModeLabel,
   memories,
+  members,
   myProfile,
   places,
   rooms as fallbackRooms,
   tags,
+  tagCategories,
   timetableStops,
-  type Room
+  type Room,
+  type RoomStatus,
+  type TimetableStop
 } from "@/lib/data";
 import { getKakaoMapKey, loadKakaoMap, type KakaoMapState } from "@/lib/kakao-map";
 import { type AppScreen, getScreenById, SCREEN_ROUTES } from "@/lib/routes";
-import { useAppStore } from "@/store/app-store";
-import { AppBar, Avatar, Button, Card, Chip, Input, Modal, Stepper } from "@/components/ui";
+import { MAX_INTEREST_TAGS, useAppStore } from "@/store/app-store";
+import { AppBar, Avatar, Button, Card, Chip, Input, Modal, Skeleton, Stepper } from "@/components/ui";
+import {
+  BackButton,
+  Badge,
+  ConcertCard,
+  InfoRow,
+  MapFallback,
+  MapPin as MapPinMarker,
+  MapPlaceCard,
+  MemberRow,
+  RoomCard,
+  SectionTitle,
+  TimelineBlock
+} from "@/components/buddy-patterns";
 import { MobileShell } from "@/components/shell";
 import { cn } from "@/lib/utils";
 
 const nicknameSchema = z.object({
-  nickname: z.string().min(2, "두 글자 이상 입력해 주세요").max(12, "12자 이하로 입력해 주세요")
+  nickname: z
+    .string()
+    .min(2, "두 글자 이상 입력해 주세요")
+    .max(12, "12자 이하로 입력해 주세요")
+    .regex(/^[가-힣A-Za-z0-9_]+$/, "한글·영문·숫자·_ 만 사용할 수 있어요")
 });
 
 const roomSchema = z.object({
   title: z.string().min(5, "방 제목을 조금 더 구체적으로 적어 주세요"),
-  intro: z.string().min(10, "소개는 10자 이상 필요해요")
+  intro: z.string().min(10, "소개는 10자 이상 필요해요"),
+  meetPlace: z.string().min(1, "집합 장소를 입력해 주세요"),
+  meetTime: z.string().min(1, "집합 시간을 입력해 주세요"),
+  openChatUrl: z.string().optional(),
+  openChatPassword: z.string().optional()
 });
 
 const profileSchema = z.object({
   nickname: z.string().min(2, "닉네임을 확인해 주세요"),
-  intro: z.string().min(5, "소개를 입력해 주세요")
+  bio: z.string().min(5, "소개를 입력해 주세요")
 });
 
-export function BuddyDuckApp({ screen }: { screen: AppScreen }) {
-  const showNav = Boolean(screen.nav) && !["CB-01", "CB-02"].includes(screen.id);
+const homeCategoryFilters = ["전체", "K-POP", "뮤지컬", "페스티벌", "지역"];
+const roomSortOptions = ["매칭 많은 순", "날짜순", "정원순", "시간순"] as const;
+const CREATE_ROOM_MAX_TAGS = 4;
+type MyRoomFilter = "all" | "host" | "member" | "pending";
+type MyRoomCardStatus = Exclude<MyRoomFilter, "all"> | "past";
+type MyRoomCardModel = {
+  id: string;
+  title: string;
+  concertTitle: string;
+  concertDate: string;
+  dateLabel: string;
+  meetPlace: string;
+  meetTime: string;
+  currentMembers: number;
+  maxMembers: number;
+  status: MyRoomCardStatus;
+  href: string;
+  countdown?: string;
+  pendingCount?: number;
+};
+const myRoomFilters = [
+  { key: "all", label: "전체" },
+  { key: "host", label: "방장" },
+  { key: "member", label: "참여중" },
+  { key: "pending", label: "대기중" }
+] as const;
+const pastMyRooms: MyRoomCardModel[] = [
+  {
+    id: "past-spring-festival",
+    title: "스프링 페스티벌 같이 가요",
+    concertTitle: "완료",
+    concertDate: "2026.04.20",
+    dateLabel: "04.20 (토)",
+    meetPlace: "합정역 1번 출구",
+    meetTime: "12:00",
+    currentMembers: 4,
+    maxMembers: 4,
+    status: "past",
+    href: "/rooms/member"
+  }
+];
+
+export function BuddyDuckApp({ screen, showOpenChatModal = false }: { screen: AppScreen; showOpenChatModal?: boolean }) {
+  const showNav = Boolean(screen.nav) && !["CB-01", "CB-02", "CB-05"].includes(screen.id);
 
   return (
     <MobileShell screen={screen} showNav={showNav}>
-      <ScreenContent screen={screen} />
+      <ScreenContent screen={screen} showOpenChatModal={showOpenChatModal} />
     </MobileShell>
   );
 }
 
-function ScreenContent({ screen }: { screen: AppScreen }) {
+function ScreenContent({ screen, showOpenChatModal = false }: { screen: AppScreen; showOpenChatModal?: boolean }) {
   switch (screen.id) {
     case "CB-01":
       return <LoginScreen />;
@@ -88,9 +156,9 @@ function ScreenContent({ screen }: { screen: AppScreen }) {
     case "CB-06":
       return <MyRoomsScreen />;
     case "CB-07A":
-      return <RoomDetailScreen mode="host" />;
+      return <RoomDetailScreen mode="host" showOpenChatModal={showOpenChatModal} />;
     case "CB-07B":
-      return <RoomDetailScreen mode="member" />;
+      return <RoomDetailScreen mode="member" showOpenChatModal={showOpenChatModal} />;
     case "CB-07C":
       return <RoomDetailScreen mode="pending" />;
     case "CB-07D":
@@ -98,7 +166,7 @@ function ScreenContent({ screen }: { screen: AppScreen }) {
     case "CB-07Dprime":
       return <RoomDetailScreen mode="visitor" showApplyModal />;
     case "CB-08":
-      return <OpenChatScreen />;
+      return <RoomDetailScreen mode="member" showOpenChatModal />;
     case "CB-09":
       return <TimelineScreen />;
     case "CB-10":
@@ -121,26 +189,33 @@ function ScreenContent({ screen }: { screen: AppScreen }) {
 function LoginScreen() {
   return (
     <>
-      <div className="flex flex-1 flex-col px-6 pb-5 pt-12">
-        <div className="mb-8 grid h-24 w-24 place-items-center rounded-[28px] bg-[var(--cb-yellow)] text-[42px] font-black text-[var(--cb-on-yellow)] shadow-[var(--sh-glow)]">
-          BD
-        </div>
-        <div className="mt-2">
-          <p className="text-[11px] font-bold uppercase tracking-[.16em] text-[var(--cb-yellow)]">Concert Buddy</p>
-          <h1 className="mt-3 text-[30px] font-black leading-tight tracking-normal">콘서트 전후 일정까지 맞는 동행을 찾아요</h1>
-          <p className="mt-4 text-[13px] leading-6 text-[var(--cb-text-2)]">
-            관심 태그, 이동 방식, 일정 성향을 기반으로 공연장 주변 동행 방을 탐색합니다.
+      <div className="login-hero flex flex-1 flex-col items-center px-6 pb-8 pt-[118px] text-center">
+        <Image
+          alt="BuddyDuck"
+          className="h-24 w-24 rounded-[26px] object-cover shadow-[0_18px_50px_-14px_rgba(253,190,13,.55)]"
+          height={96}
+          priority
+          src="/images/concert-buddy-logo.png"
+          width={96}
+        />
+        <h1 className="mt-[22px] text-[28px] font-extrabold leading-tight tracking-normal">BuddyDuck</h1>
+        <p className="mt-2 text-[14px] leading-[1.55] text-[var(--cb-text-2)]">
+          덕메를 찾고,
+          <br />
+          함께 공연을 준비해요.
+        </p>
+        <div className="mt-auto w-full space-y-3">
+          <p className="mb-1 text-[11px] leading-5 text-[var(--cb-text-3)]">
+            로그인 시 서비스 약관과 개인정보 처리방침에 동의합니다.
           </p>
-        </div>
-        <div className="mt-auto space-y-3">
           <Link href="/nickname">
             <Button variant="kakao">
-              <MessageCircle size={19} /> 카카오로 계속하기
+              <MessageCircle size={19} /> 카카오로 시작하기
             </Button>
           </Link>
-          <p className="text-center text-[11px] leading-5 text-[var(--cb-text-3)]">
-            API 연결 전 정적 프로토타입입니다. 로그인 버튼은 닉네임 설정 화면으로 이동합니다.
-          </p>
+          <button className="w-full py-2 text-[13px] text-[var(--cb-text-2)] underline underline-offset-[3px]" type="button">
+            데모 로그인 (발표용)
+          </button>
         </div>
       </div>
     </>
@@ -148,6 +223,8 @@ function LoginScreen() {
 }
 
 function NicknameScreen() {
+  const [selectedAge, setSelectedAge] = useState("");
+  const [selectedGender, setSelectedGender] = useState("");
   const {
     register,
     control,
@@ -155,35 +232,100 @@ function NicknameScreen() {
   } = useForm<z.infer<typeof nicknameSchema>>({
     resolver: zodResolver(nicknameSchema),
     mode: "onChange",
-    defaultValues: { nickname: "duck_moon" }
+    defaultValues: { nickname: "" }
   });
-  const nicknameLength = useWatch({ control, name: "nickname" })?.length ?? 0;
+  const nickname = useWatch({ control, name: "nickname" }) ?? "";
+  const nicknameLength = nickname.length;
+  const isAvailable = isValid && nickname !== "admin";
+  const canComplete = isAvailable && selectedAge && selectedGender;
+  const ageOptions = ["10대", "20대", "30대", "40대+"];
+  const genderOptions = ["여성", "남성"];
 
   return (
     <>
-      <AppBar title="프로필 시작" left={<BackButton href="/login" />} />
+      <AppBar title="닉네임 설정" />
       <div className="body-scroll flex flex-col">
         <div className="pt-8">
-          <h1 className="text-[21px] font-bold">어떤 이름으로 불릴까요?</h1>
-          <p className="mt-2 text-[13px] leading-6 text-[var(--cb-text-2)]">방 신청과 오픈채팅 안내에 표시됩니다.</p>
+          <h1 className="text-[21px] font-bold leading-tight">
+            사용할 닉네임을
+            <br />
+            정해주세요
+          </h1>
+          <p className="mt-2 text-[13px] leading-6 text-[var(--cb-text-2)]">방장이 보는 카드, 오픈채팅에서 사용돼요.</p>
         </div>
         <div className="mt-8">
-          <Input label="닉네임" placeholder="닉네임 입력" error={errors.nickname?.message} {...register("nickname")} />
-          <div className="mt-2 text-right text-[11px] text-[var(--cb-text-3)]">{nicknameLength}/12</div>
+          <Input
+            label="닉네임"
+            maxLength={12}
+            placeholder="닉네임 입력"
+            error={errors.nickname?.message}
+            {...register("nickname")}
+          />
+          <div className="mt-2 flex items-center justify-between text-[11px]">
+            <span className={isAvailable ? "font-semibold text-[var(--cb-yellow)]" : "text-[var(--cb-text-3)]"}>
+              {nicknameLength === 0 ? "한글·영문·숫자·_ 만 가능. 2 ~ 12자." : isAvailable ? "사용 가능한 닉네임 형식이에요." : "닉네임을 확인해 주세요."}
+            </span>
+            <span className="text-[var(--cb-text-3)]">{nicknameLength} / 12</span>
+          </div>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {["굿즈", "사진", "20대", "같이입장"].map((tag) => (
-            <Chip key={tag} active>
-              {tag}
-            </Chip>
-          ))}
-        </div>
+        <section className="mt-6">
+          <div className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-[var(--cb-text-2)]">
+            연령대
+            <span className="rounded-[var(--r-pill)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] px-2 py-0.5 text-[10px] font-bold text-[var(--cb-yellow)]">
+              필수
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="연령대 선택">
+            {ageOptions.map((age) => (
+              <Chip
+                key={age}
+                active={selectedAge === age}
+                aria-pressed={selectedAge === age}
+                onClick={() => setSelectedAge(age)}
+                type="button"
+              >
+                {age}
+              </Chip>
+            ))}
+          </div>
+        </section>
+        <section className="mt-5">
+          <div className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-[var(--cb-text-2)]">
+            성별
+            <span className="rounded-[var(--r-pill)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] px-2 py-0.5 text-[10px] font-bold text-[var(--cb-yellow)]">
+              필수
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="성별 선택">
+            {genderOptions.map((gender) => (
+              <Chip
+                key={gender}
+                active={selectedGender === gender}
+                aria-pressed={selectedGender === gender}
+                onClick={() => setSelectedGender(gender)}
+                type="button"
+              >
+                {gender}
+              </Chip>
+            ))}
+          </div>
+        </section>
+        <p className="mt-5 rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-3 text-[11.5px] leading-5 text-[var(--cb-text-3)]">
+          연령대·성별은 방장이 승인 여부를 판단할 때 도움이 돼요. 선택한 정보는 나중에 프로필에서 수정할 수 있어요.
+        </p>
         <div className="mt-auto pt-6">
-          <Link href="/home">
-            <Button disabled={!isValid} className={!isValid ? "bg-[var(--cb-surface-2)] text-[var(--cb-text-3)] shadow-none" : ""}>
-              시작하기
+          {canComplete ? (
+            <Link href="/home">
+              <Button>완료</Button>
+            </Link>
+          ) : (
+            <Button disabled className="bg-[var(--cb-surface-2)] text-[var(--cb-text-3)] shadow-none">
+              완료
             </Button>
-          </Link>
+          )}
+          <p className="mt-2 text-center text-[11px] text-[var(--cb-text-3)]">
+            {canComplete ? "입력한 정보로 BuddyDuck을 시작해요." : "닉네임, 연령대, 성별을 모두 입력해 주세요."}
+          </p>
         </div>
       </div>
     </>
@@ -191,54 +333,67 @@ function NicknameScreen() {
 }
 
 function HomeScreen() {
-  const { data } = useConcerts();
-  const concertData = data ?? fallbackConcerts;
+  const [query, setQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("전체");
+  const concertData = fallbackConcerts;
+  const filteredConcerts = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return concertData.filter((concert) => {
+      const matchesQuery =
+        normalizedQuery.length === 0 ||
+        [concert.artist, concert.title, concert.category, concert.venue, ...concert.tags].some((value) => value.toLowerCase().includes(normalizedQuery));
+      const matchesCategory = activeCategory === "전체" || concert.category === activeCategory;
+
+      return matchesQuery && matchesCategory;
+    });
+  }, [activeCategory, concertData, query]);
 
   return (
     <>
       <AppBar
-        left={<div className="text-[21px] font-bold">Buddy Duck</div>}
+        left={<h1 className="text-[21px] font-bold leading-none tracking-[-.02em]">공연 찾기</h1>}
         right={
-          <Button size="icon" variant="outline" aria-label="알림">
-            <Bell size={18} />
+          <Button size="icon" variant="outline" aria-label="공연 필터">
+            <Settings2 size={18} />
           </Button>
         }
       />
       <div className="body-scroll">
-        <section className="rounded-[var(--r-lg)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] p-4">
-          <p className="text-[11px] font-bold uppercase tracking-[.12em] text-[var(--cb-yellow)]">Next Concert</p>
-          <h1 className="mt-2 text-[21px] font-bold leading-tight">Moonlight Sync Live</h1>
-          <p className="mt-1 text-[12.5px] text-[var(--cb-text-2)]">2026.06.15 · KSPO Dome · D-11</p>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[11px] text-[var(--cb-text-3)]">
-            {["동행방 32", "매칭률 96%", "일정 4개"].map((item) => (
-              <div key={item} className="rounded-[var(--r-sm)] bg-[var(--cb-surface-2)] px-2 py-2 font-semibold">
-                {item}
-              </div>
-            ))}
-          </div>
-        </section>
-        <SectionTitle title="트렌딩 태그" />
-        <div className="-mx-1 flex gap-2 overflow-auto px-1">
-          {tags.slice(0, 7).map((tag, index) => (
-            <Chip key={tag} active={index < 3}>
-              #{tag}
+        <label className="mt-2 flex h-[46px] items-center gap-2.5 rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 text-[13.5px] text-[var(--cb-text-3)]">
+          <Search size={18} aria-hidden="true" />
+          <input
+            aria-label="공연 검색"
+            className="min-w-0 flex-1 bg-transparent text-[13.5px] text-[var(--cb-text)] outline-none placeholder:text-[var(--cb-text-3)]"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="공연명 / 지역 / 아티스트 검색"
+            type="search"
+            value={query}
+          />
+        </label>
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 py-3">
+          {homeCategoryFilters.map((filter) => (
+            <Chip
+              key={filter}
+              active={activeCategory === filter}
+              aria-pressed={activeCategory === filter}
+              className="px-3.5"
+              onClick={() => setActiveCategory(filter)}
+              type="button"
+            >
+              {filter}
+              {filter === "지역" ? <ChevronDown size={13} /> : null}
             </Chip>
           ))}
         </div>
-        <SectionTitle title="다가오는 공연" />
-        <div className="space-y-3">
-          {concertData.map((concert) => (
-            <Link key={concert.id} href="/rooms" className="flex gap-3 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-3 shadow-[var(--sh-card)]">
-              <div className="ph h-[72px] w-[72px] rounded-[var(--r-md)]" />
-              <div className="min-w-0 flex-1 py-1">
-                <h2 className="truncate text-[15px] font-bold">{concert.title}</h2>
-                <p className="mt-1 text-[12.5px] text-[var(--cb-text-2)]">{concert.artist} · {concert.venue}</p>
-                <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-[var(--cb-text-3)]">
-                  <CalendarDays size={14} /> <b className="text-[var(--cb-yellow)]">{concert.dday}</b> · 동행 {concert.buddies}
-                </p>
-              </div>
-            </Link>
-          ))}
+        <div className="mb-3 mt-1 text-[15px] font-bold tracking-[-.01em]">다가오는 공연</div>
+        <div className="space-y-3 pb-1">
+          {filteredConcerts.map((concert) => <ConcertCard key={concert.id} concert={concert} />)}
+          {filteredConcerts.length === 0 ? (
+            <div className="rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] px-4 py-8 text-center text-[12.5px] text-[var(--cb-text-3)]">
+              조건에 맞는 공연이 없어요.
+            </div>
+          ) : null}
         </div>
       </div>
     </>
@@ -246,182 +401,742 @@ function HomeScreen() {
 }
 
 function RoomListScreen({ showTagModal = false }: { showTagModal?: boolean }) {
-  const { data } = useRooms();
+  const router = useRouter();
+  const { data, isLoading } = useRooms();
   const roomData = data ?? fallbackRooms;
   const { selectedTags, toggleTag } = useAppStore();
+  const [activeSort, setActiveSort] = useState<(typeof roomSortOptions)[number]>("매칭 많은 순");
+  const sortedRooms = useMemo(() => {
+    const nextRooms = [...roomData];
+
+    if (activeSort === "날짜순") {
+      return nextRooms.sort((a, b) => a.concertDate.localeCompare(b.concertDate));
+    }
+    if (activeSort === "정원순") {
+      return nextRooms.sort((a, b) => b.maxMembers - b.currentMembers - (a.maxMembers - a.currentMembers));
+    }
+    if (activeSort === "시간순") {
+      return nextRooms.sort((a, b) => a.meetTime.localeCompare(b.meetTime));
+    }
+
+    return nextRooms.sort((a, b) => b.match - a.match);
+  }, [activeSort, roomData]);
+
+  const closeTagModal = useCallback(() => router.push("/rooms"), [router]);
+
+  useEffect(() => {
+    if (!showTagModal) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeTagModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeTagModal, showTagModal]);
 
   return (
     <>
       <AppBar
-        title="동행 방"
+        title="Stadium Tour - Night 1"
         left={<BackButton href="/home" />}
         right={
-          <Link href="/rooms/create">
-            <Button size="icon" variant="outline" aria-label="방 만들기">
-              <Plus size={18} />
-            </Button>
-          </Link>
+          <Button size="icon" variant="outline" aria-label="공유">
+            <Share2 size={18} />
+          </Button>
         }
       />
-      <div className="ph h-[140px]">
-        <div className="absolute inset-x-4 bottom-5">
-          <h1 className="text-[17px] font-bold">Moonlight Sync Live</h1>
-          <p className="mt-1 text-[12px] text-[var(--cb-text-2)]">KSPO Dome · <b className="text-[var(--cb-yellow)]">D-11</b></p>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className={cn("ph h-[140px]", showTagModal && "blur-[2px]")}>
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent from-30% to-[rgba(8,8,9,.85)]" />
+          <div className="absolute bottom-6 left-4 z-[1]">
+            <h1 className="text-[17px] font-bold tracking-[-.01em]">KSPO Dome</h1>
+            <p className="mt-[3px] flex items-center gap-[7px] text-[12px] text-[var(--cb-text-2)]">
+              2026.06.15 (월) 19:00 · <b className="font-bold text-[var(--cb-yellow)]">D-25</b>
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="relative z-10 mx-4 -mt-3 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[var(--cb-surface-1)] p-3 shadow-[var(--sh-card)]">
-        <div className="flex items-center justify-between text-[12.5px] font-semibold">
-          내 태그
-          <Link href="/rooms?modal=tags" className="flex items-center gap-1 text-[12px] text-[var(--cb-yellow)]">
-            <Filter size={14} /> 편집
-          </Link>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {selectedTags.map((tag) => (
-            <Badge key={tag}>{tag}</Badge>
-          ))}
-        </div>
-      </div>
-      <div className="body-scroll pt-4">
-        <div className="mb-3 flex gap-2 overflow-auto">
-          {["추천순", "빈자리", "내 태그", "신규"].map((item, index) => (
-            <Chip key={item} active={index === 0}>
-              {item}
-            </Chip>
-          ))}
-        </div>
-        <div className="space-y-3">
-          {roomData.map((room) => (
-            <RoomCard key={room.id} room={room} href={roomHref(room)} />
-          ))}
-        </div>
-      </div>
-      {showTagModal ? (
-        <Modal title="관심 태그 조정" onClose={() => undefined}>
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <Chip key={tag} active={selectedTags.includes(tag)} onClick={() => toggleTag(tag)}>
+        <div
+          className={cn(
+            "relative z-[3] mx-4 -mt-3 flex flex-col gap-2.5 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[var(--cb-surface-1)] px-3.5 py-[13px] shadow-[var(--sh-card)]",
+            showTagModal && "blur-[2px]"
+          )}
+        >
+          <div className="flex items-center justify-between text-[12.5px] font-semibold">
+            <span>이 공연에서 내 관심 태그</span>
+            <Link href="/rooms?modal=tags" className="flex items-center gap-1 text-[12px] font-semibold text-[var(--cb-yellow)]">
+              편집 <Pencil size={13} />
+            </Link>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {selectedTags.map((tag) => (
+              <Badge key={tag} tone="yellow">
                 {tag}
-              </Chip>
+              </Badge>
             ))}
           </div>
-          <Link href="/rooms" className="mt-4 block">
-            <Button>필터 적용</Button>
-          </Link>
-        </Modal>
-      ) : null}
+        </div>
+        <div className="flex shrink-0 gap-2 overflow-x-auto px-4 pb-1.5 pt-3.5">
+          {roomSortOptions.map((option) => (
+            <button
+              aria-pressed={activeSort === option}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center rounded-[var(--r-pill)] border px-[13px] text-[12px] font-semibold transition active:scale-[0.97]",
+                activeSort === option
+                  ? "border-[var(--cb-yellow)] bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]"
+                  : "border-[var(--cb-line)] bg-[var(--cb-surface-2)] text-[var(--cb-text-2)]"
+              )}
+              key={option}
+              onClick={() => setActiveSort(option)}
+              type="button"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-1.5">
+          <div className="space-y-3">
+            {isLoading && roomData.length === 0
+              ? [0, 1, 2].map((item) => <Skeleton key={item} className="h-[150px]" />)
+              : sortedRooms.map((room) => <RoomCard key={room.id} room={room} href={roomHref(room)} selectedTags={selectedTags} />)}
+          </div>
+        </div>
+      </div>
+      <Link
+        href="/rooms/create"
+        className="fixed bottom-[84px] z-30 grid h-[58px] w-[58px] place-items-center rounded-full bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)] shadow-[0_12px_28px_-8px_rgba(253,190,13,.6)] transition active:scale-[0.97]"
+        style={{ right: "max(18px, calc((100vw - 430px) / 2 + 18px))" }}
+        aria-label="방 만들기"
+      >
+        <Plus size={26} strokeWidth={2.4} />
+      </Link>
+      {showTagModal ? <InterestTagModal closeTagModal={closeTagModal} selectedTags={selectedTags} toggleTag={toggleTag} /> : null}
     </>
   );
 }
 
+function InterestTagModal({
+  closeTagModal,
+  selectedTags,
+  toggleTag
+}: {
+  closeTagModal: () => void;
+  selectedTags: string[];
+  toggleTag: (tag: string) => void;
+}) {
+  return (
+    <TagSelectionSheet
+      title="관심 태그 선택"
+      description={`최대 ${MAX_INTEREST_TAGS}개까지 선택 · 사전 정의된 태그에서 골라요`}
+      selectedTags={selectedTags}
+      maxTags={MAX_INTEREST_TAGS}
+      onToggle={toggleTag}
+      onDismiss={closeTagModal}
+      actions={
+        <>
+          <Link
+            className="inline-flex h-[50px] items-center justify-center rounded-[var(--r-md)] border border-[var(--cb-line-2)] bg-[var(--cb-surface-2)] text-[14px] font-bold text-[var(--cb-text)] transition active:scale-[0.97]"
+            href="/rooms"
+          >
+            취소
+          </Link>
+          <Link
+            className="inline-flex h-[50px] items-center justify-center rounded-[var(--r-md)] border border-[var(--cb-yellow)] bg-[var(--cb-yellow)] text-[14px] font-bold text-[var(--cb-on-yellow)] shadow-[var(--sh-glow)] transition active:scale-[0.97]"
+            href="/rooms"
+          >
+            저장 ({selectedTags.length}/{MAX_INTEREST_TAGS})
+          </Link>
+        </>
+      }
+    />
+  );
+}
+
+function TagSelectionSheet({
+  title,
+  description,
+  selectedTags,
+  maxTags,
+  onToggle,
+  onDismiss,
+  actions
+}: {
+  title: string;
+  description: string;
+  selectedTags: string[];
+  maxTags: number;
+  onToggle: (tag: string) => void;
+  onDismiss: () => void;
+  actions: React.ReactNode;
+}) {
+  const isAtLimit = selectedTags.length >= maxTags;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onDismiss();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onDismiss]);
+
+  return (
+    <div
+      aria-label="모달 배경"
+      className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-3.5 backdrop-blur-[4px]"
+      onClick={onDismiss}
+      role="presentation"
+    >
+      <section
+        aria-label={title}
+        aria-modal="true"
+        className="sheet-enter w-full max-w-[402px] rounded-[var(--r-xl)] border border-[var(--cb-line-2)] bg-[var(--cb-surface-1)] p-4 shadow-[var(--sh-pop)]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="mb-4 flex items-start gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--r-md)] bg-[var(--cb-yellow-dim)] text-[18px] font-black text-[var(--cb-yellow)]">
+            #
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-[16px] font-bold leading-tight">{title}</h2>
+            <p className="mt-1 text-[11.5px] leading-5 text-[var(--cb-text-3)]">{description}</p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3.5">
+          {tagCategories.map((category) => (
+            <div key={category.title}>
+              <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[.1em] text-[var(--cb-text-3)]">{category.title}</div>
+              <div className="flex flex-wrap gap-2">
+                {category.tags.map((tag) => {
+                  const active = selectedTags.includes(tag);
+                  const disabled = !active && isAtLimit;
+
+                  return (
+                    <Chip
+                      active={active}
+                      aria-pressed={active}
+                      className={cn(disabled && "opacity-45")}
+                      disabled={disabled}
+                      key={tag}
+                      onClick={() => onToggle(tag)}
+                      type="button"
+                    >
+                      {tag}
+                    </Chip>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] p-3 text-[11.5px] leading-5 text-[var(--cb-yellow-2)]">
+          선택한 태그로 <b className="font-bold text-[var(--cb-yellow)]">방 카드 매칭 수</b>가 결정돼요. 사용자 정의 태그는 지원하지 않아요.
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2">{actions}</div>
+      </section>
+    </div>
+  );
+}
+
 function CreateRoomScreen() {
+  const router = useRouter();
   const mutation = useCreateRoomMutation();
-  const [selected, setSelected] = useState(["굿즈", "사진"]);
+  const [selected, setSelected] = useState(["굿즈 줄서기", "역조공 카페", "식사 같이"]);
+  const [maxMembers, setMaxMembers] = useState(4);
+  const [hasOvernight, setHasOvernight] = useState(false);
+  const [showTagModal, setShowTagModal] = useState(false);
+  const meetTimeInputRef = useRef<HTMLInputElement | null>(null);
   const {
     register,
     handleSubmit,
-    formState: { errors, isValid }
+    formState: { errors }
   } = useForm<z.infer<typeof roomSchema>>({
     resolver: zodResolver(roomSchema),
     mode: "onChange",
-    defaultValues: { title: "굿즈 줄 같이 서고 공연 전 카페까지", intro: "공연 전 굿즈 수령 후 카페에서 쉬다가 같이 입장해요." }
+    defaultValues: {
+      title: "굿즈 줄 같이 서고 카페까지 같이 가요",
+      intro: "조용히 줄서고, 카페 갔다가 같이 입장해요. 응원봉 챙겨와주세요.",
+      meetPlace: "",
+      meetTime: "2026-06-15T14:00",
+      openChatUrl: "",
+      openChatPassword: ""
+    }
   });
+  const meetTimeField = register("meetTime");
+  const closeTagModal = useCallback(() => setShowTagModal(false), []);
+  const openMeetTimePicker = useCallback(() => {
+    const input = meetTimeInputRef.current;
+    if (typeof input?.showPicker !== "function") return;
+
+    try {
+      input.showPicker();
+    } catch {
+      // Some browsers throw when native picker access is unavailable.
+    }
+  }, []);
+  const handleMeetTimePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      event.preventDefault();
+      openMeetTimePicker();
+    },
+    [openMeetTimePicker]
+  );
+  const toggleRoomTag = useCallback((tag: string) => {
+    setSelected((current) => {
+      if (current.includes(tag)) return current.filter((item) => item !== tag);
+      if (current.length >= CREATE_ROOM_MAX_TAGS) return current;
+      return [...current, tag];
+    });
+  }, []);
 
   return (
     <>
-      <AppBar title="방 개설" left={<BackButton href="/rooms" />} />
+      <AppBar title="방 만들기" left={<BackButton href="/rooms" icon="close" />} right={<span className="w-[38px]" />} />
       <form
-        className="body-scroll flex flex-col gap-4"
-        onSubmit={handleSubmit((values) => mutation.mutate({ title: values.title, tags: selected }))}
+        className="flex min-h-0 flex-1 flex-col"
+        onSubmit={handleSubmit((values) => {
+          mutation.mutate({ title: values.title, tags: selected });
+          router.push("/rooms/host");
+        })}
       >
-        <Input label="방 제목" error={errors.title?.message} {...register("title")} />
-        <Input label="소개" multiline error={errors.intro?.message} {...register("intro")} />
-        <div>
-          <div className="mb-2 text-[12.5px] font-semibold text-[var(--cb-text-2)]">모집 태그</div>
-          <div className="flex flex-wrap gap-2">
-            {tags.slice(0, 8).map((tag) => (
-              <Chip
-                key={tag}
-                active={selected.includes(tag)}
-                onClick={() => setSelected((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]))}
-                type="button"
-              >
-                {tag}
-              </Chip>
-            ))}
+        <div className="mx-4 mt-3 flex shrink-0 items-start gap-2.5 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] px-3.5 py-3 text-[12px] leading-[1.5] text-[var(--cb-yellow-2)]">
+          <Info className="mt-px shrink-0 text-[var(--cb-yellow)]" size={17} />
+          <div>
+            이 방은 <b className="font-bold text-[var(--cb-yellow)]">방장 승인</b>으로 입장이 결정돼요. 선착순이 아니에요.
           </div>
         </div>
-        <Card className="text-[12px] leading-5 text-[var(--cb-text-2)]">
-          저장 시 API mutation 경계를 거치도록 구성했습니다. 현재는 mock invalidate만 수행합니다.
-        </Card>
-        <div className="mt-auto">
-          <Button disabled={!isValid}>{mutation.isPending ? "저장 중" : "방 만들기"}</Button>
+        <div className="body-scroll flex flex-col gap-4 !pb-28 !pt-[6px]">
+          <CreateRoomField label="공연">
+            <DisabledFormInput label="공연" value="Stadium Tour — Night 1" right="2026.06.15" />
+          </CreateRoomField>
+          <Input label="방 제목" error={errors.title?.message} {...register("title")} />
+          <Input label="한 줄 소개" multiline error={errors.intro?.message} {...register("intro")} />
+          <CreateRoomField label="방 태그" optional="(최대 4개)">
+            <div className="flex flex-wrap gap-1.5">
+              {selected.map((tag) => (
+                <Badge key={tag} tone="yellow">
+                  {tag}
+                </Badge>
+              ))}
+              <button
+                aria-label="태그 추가"
+                className="inline-flex items-center gap-1 rounded-[var(--r-pill)] border border-dashed border-[var(--cb-line-2)] bg-transparent px-2.5 py-1 text-[11px] font-semibold text-[var(--cb-text-2)] transition active:scale-[0.97]"
+                onClick={() => setShowTagModal(true)}
+                type="button"
+              >
+                + 추가
+              </button>
+            </div>
+          </CreateRoomField>
+          <div className="grid grid-cols-2 gap-3">
+            <CreateRoomField label="최대 인원">
+              <div className="relative">
+                <select
+                  aria-label="최대 인원"
+                  className="min-h-[48px] w-full appearance-none rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 pr-9 text-sm text-[var(--cb-text)] outline-none"
+                  onChange={(event) => setMaxMembers(Number(event.target.value))}
+                  value={maxMembers}
+                >
+                  {[2, 3, 4, 5, 6, 7, 8].map((count) => (
+                    <option key={count} value={count}>
+                      {count}명
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--cb-text-3)]" size={15} />
+              </div>
+            </CreateRoomField>
+            <CreateRoomField label="1박 일정">
+              <button
+                aria-pressed={hasOvernight}
+                className="flex min-h-[48px] w-full items-center justify-between rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 text-left text-sm text-[var(--cb-text)]"
+                onClick={() => setHasOvernight((value) => !value)}
+                type="button"
+              >
+                <span>1박 포함</span>
+                <span
+                  className={cn(
+                    "relative h-7 w-[46px] rounded-[var(--r-pill)] border transition",
+                    hasOvernight ? "border-[var(--cb-yellow)] bg-[var(--cb-yellow)]" : "border-[var(--cb-line-2)] bg-[var(--cb-surface-3)]"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-[22px] w-[22px] rounded-full transition",
+                      hasOvernight ? "right-0.5 bg-[var(--cb-on-yellow)]" : "left-0.5 bg-white"
+                    )}
+                  />
+                </span>
+              </button>
+            </CreateRoomField>
+          </div>
+          <CreateRoomField label="행사 장소 (공연장)" hint="일정 역산과 도착 버퍼 30분의 기준점">
+            <DisabledFormInput label="행사 장소 (공연장)" value="KSPO Dome" />
+          </CreateRoomField>
+          <Input label="집합 장소" placeholder="장소 검색 또는 주소로 등록" error={errors.meetPlace?.message} {...register("meetPlace")} />
+          <Input
+            label="집합 시간"
+            type="datetime-local"
+            className="cursor-pointer select-none caret-transparent focus:border-[var(--cb-line)]"
+            error={errors.meetTime?.message}
+            {...meetTimeField}
+            onPointerDown={handleMeetTimePointerDown}
+            ref={(element) => {
+              meetTimeField.ref(element);
+              meetTimeInputRef.current = element as HTMLInputElement | null;
+            }}
+          />
+          <Input label="오픈채팅 URL (승인 후 공개)" placeholder="https://open.kakao.com/..." {...register("openChatUrl")} />
+          <Input label="오픈채팅 비밀번호 (선택)" placeholder="4 ~ 8자리 숫자/문자" {...register("openChatPassword")} />
         </div>
+        <div className="fixed bottom-0 left-1/2 z-30 w-full max-w-[430px] -translate-x-1/2 border-t border-[var(--cb-line)] bg-[rgba(14,14,16,.94)] p-4 pb-[calc(16px+env(safe-area-inset-bottom))] backdrop-blur">
+          <Button disabled={mutation.isPending || selected.length === 0}>{mutation.isPending ? "저장 중" : "방 만들기"}</Button>
+        </div>
+        {showTagModal ? (
+          <TagSelectionSheet
+            title="방 태그 선택"
+            description={`최대 ${CREATE_ROOM_MAX_TAGS}개까지 선택 · 사전 정의된 태그에서 골라요`}
+            selectedTags={selected}
+            maxTags={CREATE_ROOM_MAX_TAGS}
+            onToggle={toggleRoomTag}
+            onDismiss={closeTagModal}
+            actions={
+              <>
+                <button
+                  className="inline-flex h-[50px] items-center justify-center rounded-[var(--r-md)] border border-[var(--cb-line-2)] bg-[var(--cb-surface-2)] text-[14px] font-bold text-[var(--cb-text)] transition active:scale-[0.97]"
+                  onClick={closeTagModal}
+                  type="button"
+                >
+                  취소
+                </button>
+                <button
+                  className="inline-flex h-[50px] items-center justify-center rounded-[var(--r-md)] border border-[var(--cb-yellow)] bg-[var(--cb-yellow)] text-[14px] font-bold text-[var(--cb-on-yellow)] shadow-[var(--sh-glow)] transition active:scale-[0.97]"
+                  onClick={closeTagModal}
+                  type="button"
+                >
+                  저장 ({selected.length}/{CREATE_ROOM_MAX_TAGS})
+                </button>
+              </>
+            }
+          />
+        ) : null}
       </form>
     </>
   );
 }
 
+function CreateRoomField({
+  label,
+  optional,
+  hint,
+  children
+}: {
+  label: string;
+  optional?: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[12.5px] font-semibold text-[var(--cb-text-2)]">
+        {label} {optional ? <span className="font-normal text-[var(--cb-text-3)]">{optional}</span> : null}
+      </div>
+      {children}
+      {hint ? <div className="text-[11.5px] leading-[1.55] text-[var(--cb-text-3)]">{hint}</div> : null}
+    </div>
+  );
+}
+
+function DisabledFormInput({
+  label,
+  value,
+  right
+}: {
+  label: string;
+  value: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <input
+        aria-label={label}
+        className={cn(
+          "min-h-[48px] w-full rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 py-3 text-sm text-[var(--cb-text-2)] outline-none disabled:cursor-not-allowed disabled:opacity-100",
+          right && "pr-28"
+        )}
+        disabled
+        readOnly
+        value={value}
+      />
+      {right ? (
+        <span className="pointer-events-none absolute right-3.5 top-1/2 flex -translate-y-1/2 items-center text-sm text-[var(--cb-text-3)]">
+          {right}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function MyRoomsScreen() {
+  const [filter, setFilter] = useState<MyRoomFilter>("all");
+  const activeRooms = useMemo(
+    () =>
+      fallbackRooms
+        .flatMap((room) => {
+          const card = createMyRoomCard(room);
+          return card ? [card] : [];
+        })
+        .sort(compareMyRoomCards),
+    []
+  );
+  const counts = {
+    host: activeRooms.filter((room) => room.status === "host").length,
+    member: activeRooms.filter((room) => room.status === "member").length,
+    pending: activeRooms.filter((room) => room.status === "pending").length
+  };
+  const currentRooms = activeRooms.filter((room) => {
+    if (filter === "all") return true;
+    return room.status === filter;
+  });
+  const pastRooms = filter === "all" ? [...pastMyRooms].sort(compareMyRoomCards) : [];
+  const sections = [
+    { id: "current", title: "오늘 / 이번 주", rooms: currentRooms },
+    { id: "past", title: "지난 방", rooms: pastRooms }
+  ].filter((section) => section.rooms.length > 0);
+
   return (
     <>
-      <AppBar title="내 방" left={<BackButton href="/home" />} />
-      <div className="body-scroll">
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            ["호스트", "1"],
-            ["참여중", "1"],
-            ["대기", "1"]
-          ].map(([label, count]) => (
-            <Card key={label} className="p-3 text-center">
-              <div className="text-[20px] font-black text-[var(--cb-yellow)]">{count}</div>
-              <div className="text-[11px] font-semibold text-[var(--cb-text-3)]">{label}</div>
-            </Card>
-          ))}
+      <AppBar left={<h1 className="text-[21px] font-bold leading-none tracking-[-.02em]">내 방</h1>} />
+      <div className="flex h-[calc(100dvh-116px)] min-h-0 flex-col">
+        <div className="flex shrink-0 gap-2 overflow-x-auto px-4 pb-1 pt-3.5" role="group" aria-label="내 방 상태 필터">
+          {myRoomFilters.map((item) => {
+            const count = item.key === "all" ? null : counts[item.key];
+
+            return (
+            <button
+              aria-label={count === null ? item.label : `${item.label} ${count}`}
+              aria-pressed={filter === item.key}
+              key={item.key}
+              className={cn(
+                "inline-flex h-[34px] shrink-0 items-center gap-[7px] rounded-[var(--r-pill)] border px-3.5 text-[12.5px] font-semibold transition active:scale-[0.97]",
+                filter === item.key
+                  ? "border-[var(--cb-yellow)] bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]"
+                  : "border-[var(--cb-line)] bg-[var(--cb-surface-2)] text-[var(--cb-text-2)]"
+              )}
+              onClick={() => setFilter(item.key)}
+              type="button"
+            >
+              {item.label}
+              {count === null ? null : (
+                <>
+                  {" "}
+                  <span
+                    className={cn(
+                      "rounded-[var(--r-pill)] px-1.5 py-px text-[10px] font-extrabold",
+                      filter === item.key ? "bg-[var(--cb-on-yellow)] text-[var(--cb-yellow)]" : "bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]"
+                    )}
+                  >
+                    {count}
+                  </span>
+                </>
+              )}
+            </button>
+            );
+          })}
         </div>
-        <SectionTitle title="진행 중인 방" />
-        <div className="space-y-3">
-          {fallbackRooms.map((room) => (
-            <RoomCard key={room.id} room={room} href={roomHref(room)} compact />
-          ))}
+        <div className="min-h-0 flex-1 overflow-y-auto pb-[88px] pt-0">
+          {sections.length > 0 ? (
+            sections.map((section) => (
+              <section aria-labelledby={`my-rooms-${section.id}`} key={section.id}>
+                <h2
+                  className="mx-4 mb-2.5 mt-[18px] text-[10.5px] font-bold uppercase tracking-[.1em] text-[var(--cb-text-3)]"
+                  id={`my-rooms-${section.id}`}
+                >
+                  {section.title}
+                </h2>
+                {section.rooms.map((room) => (
+                  <MyRoomCard key={room.id} room={room} />
+                ))}
+              </section>
+            ))
+          ) : (
+            <Card className="mx-4 mt-[18px] p-5 text-center">
+              <p className="text-[13px] text-[var(--cb-text-2)]">아직 표시할 방이 없습니다.</p>
+              <Link href="/rooms/create" className="mt-4 block">
+                <Button>방 만들기</Button>
+              </Link>
+            </Card>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-function RoomDetailScreen({ mode, showApplyModal = false }: { mode: Room["role"]; showApplyModal?: boolean }) {
-  const room = fallbackRooms.find((item) => item.role === mode) ?? fallbackRooms[0];
-  const action = {
-    host: "신청자 관리",
-    member: "오픈채팅 열기",
-    pending: "신청 취소",
-    visitor: "동행 신청"
-  }[mode];
-  const href = mode === "visitor" ? "/rooms/visitor?modal=apply" : mode === "member" ? "/open-chat" : "/timeline";
+function MyRoomCard({ room }: { room: MyRoomCardModel }) {
+  const isPendingOrPast = room.status === "pending" || room.status === "past";
+
+  return (
+    <Link
+      href={room.href}
+      className={cn(
+        "relative mx-4 mb-3 flex gap-3 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-3 shadow-[var(--sh-card)] transition hover:border-[var(--cb-line-2)]",
+        room.status === "past" && "opacity-[.62]"
+      )}
+    >
+      <div className="ph h-[60px] w-[60px] rounded-[var(--r-md)]">
+        <span className="absolute bottom-2 left-[9px] font-mono text-[9px] font-semibold leading-none tracking-[.06em] text-white/35">
+          ROOM
+        </span>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        <div
+          className={cn(
+            "truncate pr-[42px] text-[14px] font-bold tracking-[-.01em]",
+            isPendingOrPast && "text-[var(--cb-text-2)]"
+          )}
+        >
+          {room.title}
+        </div>
+        <div className="text-[11.5px] text-[var(--cb-text-3)]">
+          {room.concertTitle} · {room.dateLabel}
+        </div>
+        <div className="mt-[5px] flex items-center gap-1.5 text-[12px] text-[var(--cb-text-2)]">
+          <MapPin size={13} className="shrink-0 text-[var(--cb-text-3)]" />
+          <span className="min-w-0 truncate">{room.meetPlace}</span>
+          <span className="shrink-0 text-[var(--cb-text-3)]">·</span>
+          <span className="shrink-0">{room.meetTime}</span>
+        </div>
+        <div className="mt-[7px] flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 text-[11.5px] text-[var(--cb-text-3)]">
+            <span className={myRoomRoleBadgeClass(room.status)}>{myRoomRoleLabel(room.status)}</span>
+            <span className="truncate">{myRoomFooterText(room)}</span>
+          </div>
+          {room.pendingCount ? (
+            <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--cb-yellow)] px-[9px] py-[3px] text-[10.5px] font-extrabold text-[var(--cb-on-yellow)]">
+              승인 대기 {room.pendingCount}건
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {room.countdown ? (
+        <div className="absolute right-3 top-3 rounded-[var(--r-sm)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] px-2 py-[3px] text-[11px] font-extrabold text-[var(--cb-yellow)]">
+          {room.countdown}
+        </div>
+      ) : null}
+    </Link>
+  );
+}
+
+function createMyRoomCard(room: Room): MyRoomCardModel | null {
+  if (room.status !== "host" && room.status !== "member" && room.status !== "pending") return null;
+
+  return {
+    id: room.id,
+    title: room.title,
+    concertTitle: myRoomConcertTitle(room.concertId),
+    concertDate: room.concertDate,
+    dateLabel: formatMyRoomDate(room.concertDate),
+    meetPlace: room.meetPlace,
+    meetTime: room.meetTime,
+    currentMembers: room.currentMembers,
+    maxMembers: room.maxMembers,
+    status: room.status,
+    href: roomHref(room),
+    countdown: room.status === "pending" ? undefined : myRoomCountdown(room.concertId),
+    pendingCount: room.status === "host" ? 2 : undefined
+  };
+}
+
+function compareMyRoomCards(a: MyRoomCardModel, b: MyRoomCardModel) {
+  const scheduleCompare = `${a.concertDate} ${a.meetTime}`.localeCompare(`${b.concertDate} ${b.meetTime}`);
+  if (scheduleCompare !== 0) return scheduleCompare;
+  return a.title.localeCompare(b.title);
+}
+
+function formatMyRoomDate(date: string) {
+  return format(new Date(`${date.replaceAll(".", "-")}T00:00:00+09:00`), "MM.dd (eee)", { locale: ko });
+}
+
+function myRoomConcertTitle(concertId: string) {
+  if (concertId === "c1") return "Stadium Tour — Night 1";
+  return getConcert(concertId).title;
+}
+
+function myRoomCountdown(concertId: string) {
+  if (concertId === "c1") return "D-3";
+  return getConcert(concertId).dday;
+}
+
+function myRoomRoleLabel(status: MyRoomCardStatus) {
+  return {
+    host: "HOST",
+    member: "참여중",
+    pending: "대기중",
+    past: "완료"
+  }[status];
+}
+
+function myRoomFooterText(room: MyRoomCardModel) {
+  if (room.status === "pending") return "신청 후 1시간";
+  return `멤버 ${room.currentMembers} / ${room.maxMembers}`;
+}
+
+function myRoomRoleBadgeClass(status: MyRoomCardStatus) {
+  return cn(
+    "shrink-0 rounded-[var(--r-sm)] px-2 py-[3px] text-[10px] font-extrabold uppercase tracking-[.04em]",
+    status === "host" && "bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]",
+    status === "member" && "border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] text-[var(--cb-yellow-2)]",
+    status === "pending" && "border border-[var(--cb-line-2)] text-[var(--cb-text-2)]",
+    status === "past" && "border border-[var(--cb-line)] text-[var(--cb-text-3)]"
+  );
+}
+
+function RoomDetailScreen({
+  mode,
+  showApplyModal = false,
+  showOpenChatModal = false
+}: {
+  mode: RoomStatus;
+  showApplyModal?: boolean;
+  showOpenChatModal?: boolean;
+}) {
+  const room = fallbackRooms.find((item) => item.status === mode) ?? fallbackRooms[0];
+  const concert = getConcert(room.concertId);
+  const detailHref = `/rooms/${mode === "host" ? "host" : mode === "member" ? "member" : mode === "pending" ? "pending" : "visitor"}`;
+  const canOpenChat = mode === "host" || mode === "member";
 
   return (
     <>
       <AppBar
-        title={modeLabel(mode)}
+        title={room.title}
         left={<BackButton href="/rooms" />}
         right={
-          <Button size="icon" variant="outline" aria-label="더보기">
-            <MoreHorizontal size={18} />
-          </Button>
+          mode === "host" || mode === "member" ? (
+            <Link href={`${detailHref}?modal=open-chat`} className="inline-flex h-[34px] items-center gap-1.5 rounded-[var(--r-pill)] bg-[var(--cb-yellow)] px-3 text-[12px] font-bold text-[var(--cb-on-yellow)]">
+              <MessageCircle size={15} /> 오픈채팅
+            </Link>
+          ) : mode === "visitor" ? (
+            null
+          ) : mode === "pending" ? (
+            null
+          ) : null
         }
       />
       <div className="body-scroll">
+        <Badge tone="yellow">{modeLabel(mode)}</Badge>
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Avatar name={room.host} host />
+              <Avatar name={room.hostAvatar} host />
               <div>
-                <div className="text-[13px] font-semibold">{room.host}</div>
+                <div className="text-[13px] font-semibold">{room.hostNickname}</div>
                 <div className="text-[11px] text-[var(--cb-text-3)]">매칭률 {room.match}%</div>
               </div>
             </div>
-            <Badge>{room.people}</Badge>
+            <Badge>
+              {room.isLocked ? <Lock size={12} /> : null}
+              {room.currentMembers}/{room.maxMembers}
+            </Badge>
           </div>
           <h1 className="mt-4 text-[19px] font-bold leading-7 text-balance">{room.title}</h1>
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -432,31 +1147,82 @@ function RoomDetailScreen({ mode, showApplyModal = false }: { mode: Room["role"]
             ))}
           </div>
         </Card>
-        <SectionTitle title="동행 일정" />
-        <TimelinePreview />
+        <SectionTitle title="콘서트 정보" />
+        <Card className="p-4">
+          <div className="text-[15px] font-bold">{concert.artist}</div>
+          <div className="mt-1 text-[13px] text-[var(--cb-text-2)]">{concert.title}</div>
+          <div className="mt-3 grid gap-2 text-[12px] text-[var(--cb-text-3)]">
+            <InfoRow label="날짜" value={concert.date} />
+            <InfoRow label="장소" value={concert.venue} />
+          </div>
+        </Card>
         <SectionTitle title="멤버" />
         <div className="space-y-2">
-          {["moon_armies", "soobin_d", "starlight_o"].map((name, index) => (
-            <div key={name} className="flex items-center gap-2 rounded-[var(--r-md)] bg-[var(--cb-surface-2)] p-3">
-              <Avatar name={name} host={index === 0} />
-              <div className="flex-1 text-[13px] font-semibold">{name}</div>
-              <Badge>{index === 0 ? "HOST" : "MEMBER"}</Badge>
-            </div>
+          {members.map((member) => (
+            <MemberRow key={member.id} member={member} />
           ))}
         </div>
+        <SectionTitle title="동행 일정" />
+        <TimelineBlock stops={timetableStops} detailed />
         {mode === "pending" ? (
           <Card className="mt-4 border-[rgba(253,190,13,.24)] bg-[var(--cb-yellow-dim)] text-[12px] leading-5 text-[var(--cb-yellow-2)]">
-            호스트 수락 전입니다. 수락되면 오픈채팅과 일정 편집이 열립니다.
+            <b>신청 대기 중</b>
+            <br />
+            호스트가 수락하면 오픈채팅과 일정표가 열립니다.
           </Card>
         ) : null}
       </div>
-      <div className="shrink-0 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_20%)] p-4">
-        <Link href={href}>
-          <Button variant={mode === "pending" ? "outline" : "primary"}>{action}</Button>
-        </Link>
-      </div>
+      {mode === "host" ? (
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_20%)] p-4">
+          <Button variant="outline">방 공유</Button>
+          <Link href="/timeline">
+            <Button>Open Timeline</Button>
+          </Link>
+        </div>
+      ) : null}
+      {mode === "member" ? (
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_20%)] p-4">
+          <Link href="/timeline">
+            <Button>Open Timeline</Button>
+          </Link>
+          <Button variant="danger">탈퇴</Button>
+        </div>
+      ) : null}
+      {mode === "pending" ? (
+        <div className="shrink-0 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_20%)] p-4">
+          <Link href="/rooms">
+            <Button variant="outline">신청 취소</Button>
+          </Link>
+        </div>
+      ) : null}
+      {mode === "visitor" ? (
+        <div className="shrink-0 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_20%)] p-4">
+          <Link href="/rooms/visitor?modal=apply">
+            <Button>동행 신청하기</Button>
+          </Link>
+        </div>
+      ) : null}
       {showApplyModal ? <ApplyModal /> : null}
+      {canOpenChat && showOpenChatModal ? <OpenChatInfoModal /> : null}
     </>
+  );
+}
+
+function OpenChatInfoModal() {
+  return (
+    <Modal title="오픈채팅 정보" onClose={() => undefined}>
+      <div className="rounded-[var(--r-md)] bg-[var(--cb-surface-2)] p-3 text-[12px] leading-5">
+        <InfoRow label="링크" value="open.kakao.com/o/aBcD9XyZ" strong />
+        <InfoRow label="비밀번호" value="2468" />
+      </div>
+      <p className="mt-3 text-[12px] leading-5 text-[var(--cb-text-2)]">
+        승인된 멤버만 볼 수 있어요. 오픈채팅 정보는 외부에 공유하지 말아주세요.
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Button variant="outline" type="button">복사</Button>
+        <Button type="button">카카오톡 열기</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -469,47 +1235,10 @@ function ApplyModal() {
           <Button variant="outline">취소</Button>
         </Link>
         <Link href="/rooms/pending" className="flex-1">
-          <Button>신청 보내기</Button>
+          <Button>신청하기</Button>
         </Link>
       </div>
     </Modal>
-  );
-}
-
-function OpenChatScreen() {
-  const messages = [
-    ["moon_armies", "굿즈 라인은 14:20쯤 도착하면 괜찮을 것 같아요."],
-    ["soobin_d", "카페 예약 가능하면 제가 확인해볼게요."],
-    ["me", "좋아요. 일정표에 장소 추가해둘게요."]
-  ];
-
-  return (
-    <>
-      <AppBar title="오픈채팅" left={<BackButton href="/rooms/member" />} right={<Badge tone="yellow">연결됨</Badge>} />
-      <div className="body-scroll flex flex-col gap-3">
-        {messages.map(([name, message]) => (
-          <div key={message} className={cn("flex gap-2", name === "me" && "justify-end")}>
-            {name !== "me" ? <Avatar name={name} /> : null}
-            <div
-              className={cn(
-                "max-w-[238px] rounded-[18px] px-3.5 py-2.5 text-[13px] leading-5",
-                name === "me" ? "bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]" : "bg-[var(--cb-surface-2)]"
-              )}
-            >
-              {message}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="flex shrink-0 gap-2 border-t border-[var(--cb-line)] p-3">
-        <div className="flex min-h-[44px] flex-1 items-center rounded-[var(--r-pill)] bg-[var(--cb-surface-2)] px-4 text-[13px] text-[var(--cb-text-3)]">
-          메시지 입력
-        </div>
-        <Button size="icon" aria-label="전송">
-          <Send size={18} />
-        </Button>
-      </div>
-    </>
   );
 }
 
@@ -521,7 +1250,7 @@ function TimelineScreen() {
         left={<BackButton href="/my-rooms" />}
         right={
           <Link href="/map">
-            <Button size="icon" variant="outline" aria-label="지도">
+            <Button size="icon" variant="outline" aria-label="지도 미리보기">
               <MapPin size={18} />
             </Button>
           </Link>
@@ -534,17 +1263,34 @@ function TimelineScreen() {
             <div className="text-[11px] text-[var(--cb-text-3)]">공연 시작 19:00 기준 자동 역산</div>
           </div>
           <Link href="/timetable" className="text-[12px] font-bold text-[var(--cb-yellow)]">
-            수정
+            편집
           </Link>
         </div>
-        <TimelinePreview detailed />
+        <TimelineBlock stops={timetableStops} detailed />
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <Link href="/timetable">
+            <Button variant="outline" size="sm">일정 수정</Button>
+          </Link>
+          <Link href="/map">
+            <Button variant="outline" size="sm">지도</Button>
+          </Link>
+          <Link href="/memories">
+            <Button variant="outline" size="sm">추억</Button>
+          </Link>
+        </div>
       </div>
     </>
   );
 }
 
 function PlaceSearchScreen() {
+  const router = useRouter();
   const [added, setAdded] = useState<string[]>([]);
+  const selectPlace = (placeName: string) => {
+    setAdded((current) => (current.includes(placeName) ? current : [...current, placeName]));
+    if (window.history.length > 1) router.back();
+    else router.push("/timetable");
+  };
 
   return (
     <>
@@ -567,7 +1313,7 @@ function PlaceSearchScreen() {
                 size="sm"
                 variant={added.includes(place.name) ? "outline" : "primary"}
                 className="h-8 w-[66px] text-[12px]"
-                onClick={() => setAdded((current) => [...current, place.name])}
+                onClick={() => selectPlace(place.name)}
               >
                 {added.includes(place.name) ? <Check size={14} /> : <Plus size={14} />}
                 추가
@@ -591,42 +1337,59 @@ function PlaceSearchScreen() {
 }
 
 function TimetableEditScreen({ showWarning = false }: { showWarning?: boolean }) {
+  const [stops, setStops] = useState<TimetableStop[]>(timetableStops);
   const [extra, setExtra] = useState(showWarning ? 42 : 0);
-  const load = calculateTimetableLoad(timetableStops, extra);
+  const load = calculateTimetableLoad(stops, extra);
+  const updateStopMinutes = (id: string, field: "dwellMinutes" | "transitMinutes", delta: number) => {
+    setStops((current) =>
+      current.map((stop) =>
+        stop.id === id ? { ...stop, [field]: Math.max(field === "dwellMinutes" ? 10 : 0, stop[field] + delta) } : stop
+      )
+    );
+  };
 
   return (
     <>
       <AppBar
-        title="일정 수정"
+        title="일정표 편집"
         left={<BackButton href="/timeline" icon="close" />}
-        right={<button className="text-[13px] font-semibold text-[var(--cb-yellow)]">초기화</button>}
+        right={<Link href="/timeline" className="text-[13px] font-semibold text-[var(--cb-yellow)]">저장</Link>}
       />
       <div className="px-4 py-3">
         <div className="text-[13px] font-bold">2026.06.15 (월) - D-Day</div>
-        <div className="text-[11px] text-[var(--cb-text-3)]">장소 블록 · 이동 블록 · 잠긴 공연 블록</div>
+        <div className="text-[11px] text-[var(--cb-text-3)]">드래그 핸들 · 체류 시간 · 이동 수단</div>
       </div>
       <div className="body-scroll">
         <div className="space-y-2">
-          {timetableStops.map((stop) => (
+          {stops.map((stop) => (
             <div key={stop.id}>
-              <Card className={cn("p-0", stop.category === "공연" && "border-[var(--cb-yellow-line)]")}>
+              <Card className={cn("p-0", stop.locked && "border-[var(--cb-yellow-line)]")}>
                 <div className="flex items-center gap-2 p-3">
+                  <GripVertical size={16} className="text-[var(--cb-text-3)]" />
                   <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--cb-yellow)] text-[12px] font-black text-[var(--cb-on-yellow)]">
-                    {stop.category === "공연" ? <Star size={14} fill="currentColor" /> : stop.id}
+                    {stop.locked ? <Star size={14} fill="currentColor" /> : stop.id.replace("s", "")}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-bold">
-                      {stop.title} {stop.category === "공연" ? <Lock className="inline" size={13} /> : null}
+                      {stop.place} {stop.locked ? <Lock className="inline" size={13} /> : null}
                     </div>
                     <div className="text-[11px] text-[var(--cb-text-3)]">{stop.time}</div>
                   </div>
-                  <Stepper value={stop.category === "공연" ? "30분" : `${stop.dwellMinutes}분`} />
+                  <Stepper
+                    value={`${stop.dwellMinutes}분`}
+                    onMinus={() => updateStopMinutes(stop.id, "dwellMinutes", -10)}
+                    onPlus={() => updateStopMinutes(stop.id, "dwellMinutes", 10)}
+                  />
                 </div>
               </Card>
-              {stop.routeMinutes > 0 ? (
+              {stop.transitMinutes > 0 ? (
                 <div className="mx-4 my-1 flex items-center justify-between rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3 py-2 text-[12px] text-[var(--cb-text-2)]">
-                  <span>{stop.routeMode} 이동</span>
-                  <Stepper value={`${stop.routeMinutes}분`} />
+                  <span>{getModeLabel(stop.mode)} 이동</span>
+                  <Stepper
+                    value={`${stop.transitMinutes}분`}
+                    onMinus={() => updateStopMinutes(stop.id, "transitMinutes", -5)}
+                    onPlus={() => updateStopMinutes(stop.id, "transitMinutes", 5)}
+                  />
                 </div>
               ) : null}
             </div>
@@ -670,7 +1433,7 @@ function OverTimeModal({ load }: { load: ReturnType<typeof calculateTimetableLoa
 function MapScreen() {
   const [state, setState] = useState<KakaoMapState>("loading");
   const { selectedMapStop, setSelectedMapStop } = useAppStore();
-  const selected = timetableStops.find((stop) => stop.id === selectedMapStop) ?? timetableStops[1];
+  const selected = timetableStops[selectedMapStop - 1] ?? timetableStops[1];
 
   useEffect(() => {
     loadKakaoMap().then(setState);
@@ -698,18 +1461,14 @@ function MapScreen() {
             [3, 68, 62],
             [4, 60, 34]
           ].map(([id, left, top]) => (
-            <button
+            <MapPinMarker
               key={id}
-              className={cn(
-                "absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 text-[12px] font-black",
-                selectedMapStop === id ? "border-[var(--cb-yellow)] bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]" : "border-[var(--cb-bg)] bg-[var(--cb-surface-3)]"
-              )}
-              style={{ left: `${left}%`, top: `${top}%` }}
-              onClick={() => setSelectedMapStop(Number(id))}
-              type="button"
-            >
-              {id === 4 ? <Star size={14} fill="currentColor" /> : id}
-            </button>
+              id={Number(id)}
+              left={Number(left)}
+              top={Number(top)}
+              selected={selectedMapStop === id}
+              onSelect={setSelectedMapStop}
+            />
           ))}
         </div>
         <div className="absolute left-4 right-4 top-3 flex gap-2">
@@ -717,25 +1476,11 @@ function MapScreen() {
           <Chip>D+1</Chip>
         </div>
         {state !== "ready" ? (
-          <div className="absolute inset-x-4 top-16 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[rgba(22,22,24,.88)] p-3 text-[11px] leading-5 text-[var(--cb-text-2)] backdrop-blur">
-            Kakao Maps fallback · {getKakaoMapKey() ? "스크립트 로딩 중 또는 실패" : "NEXT_PUBLIC_KAKAO_MAP_KEY 미설정"}
-          </div>
+          <MapFallback hasKey={Boolean(getKakaoMapKey())} />
         ) : null}
       </div>
       <div className="shrink-0 border-t border-[var(--cb-line)] p-4">
-        <Card className="flex gap-3">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--cb-yellow)] text-[12px] font-black text-[var(--cb-on-yellow)]">
-            {selected.id}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-bold">{selected.title}</div>
-            <div className="mt-1 text-[11px] text-[var(--cb-text-2)]">{selected.category} · Kakao fallback</div>
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-[var(--cb-text-3)]">
-              <Clock3 size={13} /> {selected.time}
-            </div>
-          </div>
-          <ChevronRight size={18} className="text-[var(--cb-text-3)]" />
-        </Card>
+        <MapPlaceCard stop={selected} />
       </div>
     </>
   );
@@ -758,24 +1503,14 @@ function MemoryFeedScreen() {
         <span className="text-[11px] text-[var(--cb-text-3)]">사진 12 · 영상 3</span>
       </div>
       <div className="body-scroll">
-        <div className="space-y-4">
-          {memories.map((group) => (
-            <Card key={group.stop}>
-              <div className="mb-3 flex items-center gap-2">
-                <Badge tone="yellow">{group.stop.slice(0, 2)}</Badge>
-                <div>
-                  <div className="text-[13px] font-bold">{group.stop}</div>
-                  <div className="text-[11px] text-[var(--cb-text-3)]">{group.time}</div>
-                </div>
+        <div className="grid grid-cols-2 gap-3">
+          {memories.map((memory, index) => (
+            <Card key={memory.id} className="overflow-hidden p-0">
+              <div className="ph grid aspect-square place-items-center text-[12px] font-black text-white/60">MEM {index + 1}</div>
+              <div className="p-3">
+                <div className="truncate text-[12.5px] font-bold">{memory.concertTitle}</div>
+                <div className="mt-1 text-[11px] text-[var(--cb-text-3)]">{memory.date}</div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {group.media.map((media, index) => (
-                  <div key={`${media}-${index}`} className="ph grid aspect-square place-items-center rounded-[var(--r-sm)] text-[10px] font-bold text-white/50">
-                    {media === "+" ? <Plus size={22} /> : media}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 text-[11px] text-[var(--cb-text-3)]">{group.by} · 06.15</div>
             </Card>
           ))}
         </div>
@@ -796,19 +1531,28 @@ function MemoryFeedScreen() {
 function ProfileScreen() {
   return (
     <>
-      <AppBar title="프로필" right={<Link href="/profile/edit" className="text-[13px] font-semibold text-[var(--cb-yellow)]">수정</Link>} />
+      <AppBar
+        title="프로필"
+        right={
+          <Link href="/profile/edit" className="grid h-9 w-9 place-items-center rounded-full bg-[var(--cb-surface-2)] text-[var(--cb-yellow)]" aria-label="프로필 편집">
+            <Pencil size={16} />
+          </Link>
+        }
+      />
       <div className="body-scroll">
         <Card className="p-4">
           <div className="flex items-center gap-3">
-            <Avatar name={myProfile.nickname} host />
+            <div className="grid h-16 w-16 place-items-center rounded-full border border-[var(--cb-yellow-line)] bg-[var(--cb-surface-3)] text-[22px] font-black text-[var(--cb-yellow)]">
+              {myProfile.avatar}
+            </div>
             <div>
               <h1 className="text-[18px] font-bold">{myProfile.nickname}</h1>
-              <p className="text-[12px] text-[var(--cb-text-3)]">{myProfile.age} · {myProfile.gender}</p>
+              <p className="text-[12px] text-[var(--cb-text-3)]">콘서트 동행 메이트</p>
             </div>
           </div>
-          <p className="mt-4 text-[13px] leading-6 text-[var(--cb-text-2)]">{myProfile.intro}</p>
+          <p className="mt-4 text-[13px] leading-6 text-[var(--cb-text-2)]">{myProfile.bio}</p>
           <div className="mt-4 flex flex-wrap gap-1.5">
-            {myProfile.preferredTags.map((tag) => (
+            {myProfile.tags.map((tag) => (
               <Badge key={tag} tone="yellow">
                 {tag}
               </Badge>
@@ -818,15 +1562,20 @@ function ProfileScreen() {
         <SectionTitle title="활동" />
         <div className="grid grid-cols-3 gap-2">
           {[
-            ["참여", "8"],
-            ["추억", "36"],
-            ["평점", "4.9"]
+            ["참여 공연", String(myProfile.concertCount)],
+            ["동행", String(myProfile.buddyCount)],
+            ["추억", String(memories.length)]
           ].map(([label, value]) => (
             <Card key={label} className="text-center">
               <div className="text-[20px] font-black text-[var(--cb-yellow)]">{value}</div>
               <div className="text-[11px] text-[var(--cb-text-3)]">{label}</div>
             </Card>
           ))}
+        </div>
+        <div className="mt-6">
+          <Button variant="outline">
+            <LogOut size={17} /> 로그아웃
+          </Button>
         </div>
       </div>
     </>
@@ -840,28 +1589,36 @@ function ProfileEditScreen() {
   } = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
     mode: "onChange",
-    defaultValues: { nickname: myProfile.nickname, intro: myProfile.intro }
+    defaultValues: { nickname: myProfile.nickname, bio: myProfile.bio }
   });
+  const [selectedTags, setSelectedTags] = useState(myProfile.tags);
 
   return (
     <>
-      <AppBar title="프로필 편집" left={<BackButton href="/profile" />} />
+      <AppBar title="프로필 편집" left={<BackButton href="/profile" />} right={<Link href="/profile" className="text-[13px] font-semibold text-[var(--cb-yellow)]">저장</Link>} />
       <form className="body-scroll flex flex-col gap-4">
         <div className="flex justify-center py-4">
           <div className="relative">
-            <Avatar name={myProfile.nickname} host />
+            <div className="grid h-16 w-16 place-items-center rounded-full border border-[var(--cb-yellow-line)] bg-[var(--cb-surface-3)] text-[22px] font-black text-[var(--cb-yellow)]">
+              {myProfile.avatar}
+            </div>
             <span className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]">
               <Pencil size={13} />
             </span>
           </div>
         </div>
         <Input label="닉네임" error={errors.nickname?.message} {...register("nickname")} />
-        <Input label="소개" multiline error={errors.intro?.message} {...register("intro")} />
+        <Input label="소개글" multiline error={errors.bio?.message} {...register("bio")} />
         <div>
           <div className="mb-2 text-[12.5px] font-semibold text-[var(--cb-text-2)]">선호 태그</div>
           <div className="flex flex-wrap gap-2">
             {tags.slice(0, 8).map((tag) => (
-              <Chip key={tag} active={myProfile.preferredTags.includes(tag)}>
+              <Chip
+                key={tag}
+                active={selectedTags.includes(tag)}
+                onClick={() => setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]))}
+                type="button"
+              >
                 {tag}
               </Chip>
             ))}
@@ -877,114 +1634,14 @@ function ProfileEditScreen() {
   );
 }
 
-function RoomCard({ room, href, compact = false }: { room: Room; href: string; compact?: boolean }) {
-  return (
-    <Link href={href} className="block">
-      <Card className={cn("transition hover:border-[var(--cb-line-2)]", room.status === "full" && "opacity-60")}>
-        <div className="flex items-center justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <Avatar name={room.host} host={room.role === "host"} />
-            <div className="min-w-0">
-              <div className="truncate text-[13px] font-semibold">{room.host}</div>
-              <div className="text-[11px] text-[var(--cb-text-3)]">매칭률 {room.match}%</div>
-            </div>
-          </div>
-          <Badge tone={room.status === "full" ? "muted" : "yellow"}>{room.people}</Badge>
-        </div>
-        <h2 className={cn("mt-3 font-bold leading-6", compact ? "text-[14px]" : "text-[15px]")}>{room.title}</h2>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {room.tags.map((tag) => (
-            <Badge key={tag}>{tag}</Badge>
-          ))}
-        </div>
-      </Card>
-    </Link>
-  );
-}
-
-function TimelinePreview({ detailed = false }: { detailed?: boolean }) {
-  return (
-    <div className="space-y-2">
-      {timetableStops.map((stop, index) => (
-        <div key={stop.id} className="flex gap-3">
-          <div className="flex flex-col items-center">
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--cb-yellow)] text-[12px] font-black text-[var(--cb-on-yellow)]">
-              {stop.category === "공연" ? <Star size={13} fill="currentColor" /> : stop.id}
-            </span>
-            {index < timetableStops.length - 1 ? <span className="h-10 w-px bg-[var(--cb-line-2)]" /> : null}
-          </div>
-          <div className="min-w-0 flex-1 rounded-[var(--r-md)] bg-[var(--cb-surface-2)] p-3">
-            <div className="flex justify-between gap-2">
-              <div className="truncate text-[13px] font-bold">{stop.title}</div>
-              <div className="shrink-0 text-[11px] font-semibold text-[var(--cb-yellow)]">{stop.time}</div>
-            </div>
-            {detailed ? (
-              <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--cb-text-3)]">
-                <span>{stop.category}</span>
-                <span>{stop.routeMode !== "잠금" ? `${stop.routeMode} ${stop.routeMinutes}분` : "공연 시간 잠김"}</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Badge({
-  children,
-  tone = "muted"
-}: {
-  children: React.ReactNode;
-  tone?: "muted" | "yellow";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-[var(--r-pill)] border px-2.5 py-1 text-[11px] font-semibold",
-        tone === "yellow"
-          ? "border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] text-[var(--cb-yellow-2)]"
-          : "border-[var(--cb-line)] bg-[var(--cb-surface-2)] text-[var(--cb-text-2)]"
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-function SectionTitle({ title }: { title: string }) {
-  return <h2 className="mb-3 mt-5 text-[15px] font-bold">{title}</h2>;
-}
-
-function BackButton({ href, icon = "back" }: { href: string; icon?: "back" | "close" }) {
-  return (
-    <Link
-      href={href}
-      className="grid h-[38px] w-[38px] place-items-center rounded-full border border-[var(--cb-line)] bg-[var(--cb-surface-2)]"
-      aria-label="뒤로"
-    >
-      {icon === "close" ? <X size={20} /> : <ArrowLeft size={20} />}
-    </Link>
-  );
-}
-
-function InfoRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className={cn("flex justify-between py-1.5", strong && "text-[15px] font-black text-[var(--cb-yellow)]")}>
-      <span className="text-[var(--cb-text-3)]">{label}</span>
-      <span className="font-semibold">{value}</span>
-    </div>
-  );
-}
-
 function roomHref(room: Room) {
-  if (room.role === "host") return "/rooms/host";
-  if (room.role === "member") return "/rooms/member";
-  if (room.role === "pending") return "/rooms/pending";
+  if (room.status === "host") return "/rooms/host";
+  if (room.status === "member") return "/rooms/member";
+  if (room.status === "pending") return "/rooms/pending";
   return "/rooms/visitor";
 }
 
-function modeLabel(mode: Room["role"]) {
+function modeLabel(mode: RoomStatus) {
   return {
     host: "호스트 뷰",
     member: "멤버 뷰",
