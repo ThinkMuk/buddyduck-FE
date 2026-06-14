@@ -162,6 +162,10 @@ button {
   animation: sheet-up 200ms ease-out;
 }
 
+.profile-toast {
+  animation: profile-toast 1600ms ease-in-out forwards;
+}
+
 .map-grid {
   background:
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
@@ -196,5 +200,18 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes profile-toast {
+  0% {
+    opacity: 0;
+  }
+  14%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }

@@ -10,7 +10,7 @@ type AppState = {
 };
 
 export const useAppStore = create<AppState>((set) => ({
-  selectedTags: ["굿즈 줄서기", "역조공 카페", "식사 같이"],
+  selectedTags: [],
   selectedMapStop: 2,
   toggleTag: (tag) =>
     set((state) => ({

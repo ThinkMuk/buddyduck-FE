@@ -67,6 +67,9 @@ export type Profile = {
   nickname: string;
   bio: string;
   avatar: string;
+  ageGroup: string;
+  gender: string;
+  joinedAt: string;
   tags: string[];
   concertCount: number;
   buddyCount: number;
@@ -257,11 +260,14 @@ export const members: Member[] = [
 
 export const myProfile: Profile = {
   id: "me",
-  nickname: "duck_moon",
+  nickname: "moon_armies",
   bio: "콘서트 전 굿즈, 카페, 사진 루트를 좋아해요.",
-  avatar: "D",
+  avatar: "M",
+  ageGroup: "20대",
+  gender: "여성",
+  joinedAt: "2026.05.10",
   tags: ["굿즈 줄서기", "역조공 카페", "식사 같이", "느긋한"],
-  concertCount: 8,
+  concertCount: 7,
   buddyCount: 24
 };
 

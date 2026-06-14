@@ -147,6 +147,12 @@ Hi-Fi 디자인 파일: `design/Concert Buddy - Hi-Fi UI.html`
 - 위치: 화면 하단 (left/right 14px, bottom 14px) 또는 center (transform)
 - radius `--r-xl`, `background: --cb-surface-1`, border `--cb-line-2`, `--sh-pop`
 
+### Toast
+
+- 위치: 하단 내비게이션 위 (`left/right 16px`, `bottom 76px`)
+- 다른 컴포넌트 레이아웃을 밀지 않는 viewport 기준 오버레이
+- 등장 후 약 1초 유지, fade-in/fade-out으로 사라짐
+
 ### Bottom Navigation
 
 - 높이 64px, `background: rgba(14,14,16,.92)`, `backdrop-filter: blur(12px)`

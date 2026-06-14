@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BuddyDuckApp } from "./screens";
@@ -30,9 +30,15 @@ function renderWithConcerts(ui: React.ReactElement) {
 describe("BuddyDuckApp screens", () => {
   beforeEach(() => {
     useAppStore.setState({
-      selectedTags: ["굿즈 줄서기", "역조공 카페", "식사 같이"],
+      selectedTags: [],
       selectedMapStop: 2
     });
+  });
+
+  it("starts with no default interest tags", () => {
+    useAppStore.setState(useAppStore.getInitialState(), true);
+
+    expect(useAppStore.getState().selectedTags).toEqual([]);
   });
 
   it("renders CB-01 as the Kakao login entry screen", () => {
@@ -94,19 +100,19 @@ describe("BuddyDuckApp screens", () => {
     expect(screen.queryByRole("link", { name: "동행" })).not.toBeInTheDocument();
   });
 
-  it("renders CB-04 as the hi-fi room list with interest tags and fixed create action", () => {
+  it("renders CB-04 as the hi-fi room list with an empty interest tag state and fixed create action", () => {
     renderWithConcerts(<BuddyDuckApp screen={getScreenById("CB-04")} />);
 
     expect(screen.getByText("Stadium Tour - Night 1")).toBeInTheDocument();
     expect(screen.getByText("이 공연에서 내 관심 태그")).toBeInTheDocument();
-    expect(screen.getAllByText("굿즈 줄서기").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("역조공 카페").length).toBeGreaterThan(0);
+    expect(screen.getByText("설정해 둔 태그가 없습니다")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /편집/ })).toHaveAttribute("href", "/rooms?modal=tags");
     expect(screen.getByText("매칭 많은 순")).toBeInTheDocument();
     expect(screen.getByText("날짜순")).toBeInTheDocument();
     expect(screen.getByText("정원순")).toBeInTheDocument();
     expect(screen.getByText("굿즈 줄 같이 서고 카페까지 같이 가요")).toBeInTheDocument();
-    expect(screen.getByText("3/3 match")).toBeInTheDocument();
+    expect(screen.getByText("매칭률 96%")).toBeInTheDocument();
+    expect(screen.queryByText("3/3 match")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "방 만들기" })).toHaveAttribute("href", "/rooms/create");
   });
 
@@ -115,8 +121,11 @@ describe("BuddyDuckApp screens", () => {
 
     expect(screen.getByRole("dialog", { name: "관심 태그 선택" })).toBeInTheDocument();
     expect(screen.getByText("최대 5개까지 선택 · 사전 정의된 태그에서 골라요")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "저장 (3/5)" })).toHaveAttribute("href", "/rooms");
+    expect(screen.getByRole("link", { name: "저장 (0/5)" })).toHaveAttribute("href", "/rooms");
 
+    fireEvent.click(screen.getByRole("button", { name: "굿즈 줄서기" }));
+    fireEvent.click(screen.getByRole("button", { name: "역조공 카페" }));
+    fireEvent.click(screen.getByRole("button", { name: "식사 같이" }));
     fireEvent.click(screen.getByRole("button", { name: "입장 같이" }));
     fireEvent.click(screen.getByRole("button", { name: "뒷풀이" }));
 
@@ -138,6 +147,7 @@ describe("BuddyDuckApp screens", () => {
     expect(screen.getByDisplayValue(/조용히 줄서고/)).toBeInTheDocument();
     expect(screen.getByText("방 태그")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "태그 추가" })).toBeInTheDocument();
+    expect(screen.queryByText("굿즈 줄서기")).not.toBeInTheDocument();
     const venueInput = screen.getByLabelText("행사 장소 (공연장)");
     expect(venueInput).toBeDisabled();
     expect(venueInput).toHaveValue("KSPO Dome");
@@ -151,7 +161,7 @@ describe("BuddyDuckApp screens", () => {
     expect(fireEvent.pointerDown(meetTimeInput)).toBe(false);
     expect(showPicker).toHaveBeenCalledTimes(1);
     const submitButton = screen.getByRole("button", { name: "방 만들기" });
-    expect(submitButton).toBeEnabled();
+    expect(submitButton).toBeDisabled();
     expect(submitButton.parentElement).toHaveClass("fixed");
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
 
@@ -159,9 +169,15 @@ describe("BuddyDuckApp screens", () => {
 
     expect(screen.getByRole("dialog", { name: "방 태그 선택" })).toBeInTheDocument();
     expect(screen.getByText("최대 4개까지 선택 · 사전 정의된 태그에서 골라요")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장 (0/4)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "굿즈 줄서기" }));
+    fireEvent.click(screen.getByRole("button", { name: "역조공 카페" }));
+    fireEvent.click(screen.getByRole("button", { name: "식사 같이" }));
     fireEvent.click(screen.getByRole("button", { name: "입장 같이" }));
     expect(screen.getByRole("button", { name: "포카 교환" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "저장 (4/4)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "저장 (4/4)" }));
+    expect(submitButton).toBeEnabled();
   });
 
   it("renders CB-06 as the hi-fi my rooms list with status filters and time sorting", () => {
@@ -206,5 +222,55 @@ describe("BuddyDuckApp screens", () => {
     expect(within(pendingSection).getAllByRole("link").map((link) => link.textContent)).toEqual([
       expect.stringContaining("포카 교환 + 응원 챈트 맞춰봐요")
     ]);
+  });
+
+  it("renders CB-14 profile with edit and my-room routing plus WIP feedback", () => {
+    vi.useFakeTimers();
+    try {
+      renderWithConcerts(<BuddyDuckApp screen={getScreenById("CB-14")} />);
+
+      expect(screen.getByRole("heading", { name: "프로필" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /moon_armies/ })).toHaveAttribute("href", "/profile/edit");
+      expect(screen.getByText("20대 · 여성")).toBeInTheDocument();
+      expect(screen.getByText("가입 2026.05.10")).toBeInTheDocument();
+      expect(screen.queryByText("추억 사진")).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /4\s*참여 중인 방/ })).toHaveAttribute("href", "/my-rooms");
+      expect(screen.getByRole("link", { name: /1\s*완료한 공연/ })).toHaveAttribute("href", "/my-rooms");
+
+      fireEvent.click(screen.getByRole("button", { name: /알림 설정/ }));
+      expect(screen.getByRole("status")).toHaveTextContent("개발중인 기능입니다");
+      expect(screen.getByRole("status")).toHaveClass("fixed", "bottom-[76px]", "z-30", "profile-toast");
+
+      fireEvent.click(screen.getByRole("button", { name: /도움말 \/ FAQ/ }));
+      expect(screen.getByRole("status")).toHaveTextContent("도움말 / FAQ");
+
+      act(() => {
+        vi.advanceTimersByTime(1800);
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders CB-14prime profile edit with nickname, age, gender, and bottom save", () => {
+    renderWithConcerts(<BuddyDuckApp screen={getScreenById("CB-14prime")} />);
+
+    expect(screen.getByRole("heading", { name: "프로필 수정" })).toBeInTheDocument();
+    expect(screen.getByLabelText("닉네임")).toHaveValue("moon_armies");
+    expect(screen.getByText("11 / 12")).toBeInTheDocument();
+    expect(screen.queryByLabelText("소개글")).not.toBeInTheDocument();
+
+    const ageGroup = screen.getByRole("group", { name: "연령대 선택" });
+    expect(within(ageGroup).getAllByRole("button").map((button) => button.textContent)).toEqual(["10대", "20대", "30대", "40대+", "비공개"]);
+    expect(within(ageGroup).getByRole("button", { name: "20대" })).toHaveAttribute("aria-pressed", "true");
+
+    const genderGroup = screen.getByRole("group", { name: "성별 선택" });
+    expect(within(genderGroup).getAllByRole("button").map((button) => button.textContent)).toEqual(["여성", "남성"]);
+    expect(within(genderGroup).getByRole("button", { name: "여성" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(within(ageGroup).getByRole("button", { name: "30대" }));
+    expect(within(ageGroup).getByRole("button", { name: "30대" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: "저장" })).toHaveAttribute("href", "/profile");
   });
 });

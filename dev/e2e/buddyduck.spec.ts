@@ -65,6 +65,7 @@ test.describe("BuddyDuck runtime UI", () => {
     await page.getByRole("link", { name: /Moonlight Sync Live/ }).click();
     await expect(page).toHaveURL(/\/rooms$/);
     await expect(page.getByText("이 공연에서 내 관심 태그")).toBeVisible();
+    await expect(page.getByText("설정해 둔 태그가 없습니다")).toBeVisible();
     await page.getByRole("link", { name: /편집/ }).click();
     await expect(page.getByRole("dialog", { name: "관심 태그 선택" })).toBeVisible();
     await page.keyboard.press("Escape");
@@ -94,6 +95,11 @@ test.describe("BuddyDuck runtime UI", () => {
 
   test("create room validates form and routes to host detail", async ({ page }) => {
     await page.goto("/rooms/create");
+    await expect(page.getByRole("button", { name: "방 만들기" })).toBeDisabled();
+    await page.getByRole("button", { name: "태그 추가" }).click();
+    await expect(page.getByRole("dialog", { name: "방 태그 선택" })).toBeVisible();
+    await page.getByRole("button", { name: "굿즈 줄서기" }).click();
+    await page.getByRole("button", { name: "저장 (1/4)" }).click();
     await expect(page.getByRole("button", { name: "방 만들기" })).toBeEnabled();
     await page.getByLabel("방 제목").fill("공연 전 굿즈 줄 같이 서요");
     await page.getByLabel("한 줄 소개").fill("공연 전 굿즈 수령 후 카페에서 쉬다가 같이 입장해요.");
@@ -148,10 +154,16 @@ test.describe("BuddyDuck runtime UI", () => {
     await expect(page.getByText(/Kakao Maps fallback/)).toBeVisible();
     await expect(page.getByText(/NEXT_PUBLIC_KAKAO_MAP_KEY 미설정|스크립트 로딩 중 또는 실패/)).toBeVisible();
 
-    await page.goto("/profile/edit");
+    await page.goto("/profile");
+    await expect(page.getByRole("link", { name: /moon_armies/ })).toHaveAttribute("href", "/profile/edit");
+    await expect(page.getByText("추억 사진")).toHaveCount(0);
+    await page.getByRole("button", { name: /알림 설정/ }).click();
+    await expect(page.getByRole("status")).toContainText("개발중인 기능입니다");
+    await page.getByRole("link", { name: /moon_armies/ }).click();
+    await expect(page).toHaveURL(/\/profile\/edit$/);
     await page.getByLabel("닉네임").fill("newduck");
-    await page.getByLabel("소개글").fill("콘서트 동선을 같이 맞추는 것을 좋아해요.");
-    await page.locator("header").getByRole("link", { name: "저장" }).click();
+    await page.getByRole("button", { name: "30대" }).click();
+    await page.getByRole("link", { name: "저장" }).click();
     await expect(page).toHaveURL(/\/profile$/);
   });
 

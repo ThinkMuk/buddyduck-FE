@@ -11,10 +11,10 @@ import {
   Camera,
   Check,
   ChevronDown,
+  ChevronRight,
   GripVertical,
   Info,
   Lock,
-  LogOut,
   MapPin,
   MessageCircle,
   MoreHorizontal,
@@ -38,7 +38,6 @@ import {
   myProfile,
   places,
   rooms as fallbackRooms,
-  tags,
   tagCategories,
   timetableStops,
   type Room,
@@ -80,11 +79,6 @@ const roomSchema = z.object({
   meetTime: z.string().min(1, "집합 시간을 입력해 주세요"),
   openChatUrl: z.string().optional(),
   openChatPassword: z.string().optional()
-});
-
-const profileSchema = z.object({
-  nickname: z.string().min(2, "닉네임을 확인해 주세요"),
-  bio: z.string().min(5, "소개를 입력해 주세요")
 });
 
 const homeCategoryFilters = ["전체", "K-POP", "뮤지컬", "페스티벌", "지역"];
@@ -130,7 +124,7 @@ const pastMyRooms: MyRoomCardModel[] = [
 ];
 
 export function BuddyDuckApp({ screen, showOpenChatModal = false }: { screen: AppScreen; showOpenChatModal?: boolean }) {
-  const showNav = Boolean(screen.nav) && !["CB-01", "CB-02", "CB-05"].includes(screen.id);
+  const showNav = Boolean(screen.nav) && !["CB-01", "CB-02", "CB-05", "CB-14prime"].includes(screen.id);
 
   return (
     <MobileShell screen={screen} showNav={showNav}>
@@ -468,11 +462,15 @@ function RoomListScreen({ showTagModal = false }: { showTagModal?: boolean }) {
             </Link>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {selectedTags.map((tag) => (
-              <Badge key={tag} tone="yellow">
-                {tag}
-              </Badge>
-            ))}
+            {selectedTags.length > 0 ? (
+              selectedTags.map((tag) => (
+                <Badge key={tag} tone="yellow">
+                  {tag}
+                </Badge>
+              ))
+            ) : (
+              <p className="text-[12px] font-medium text-[var(--cb-text-3)]">설정해 둔 태그가 없습니다</p>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 gap-2 overflow-x-auto px-4 pb-1.5 pt-3.5">
@@ -640,7 +638,7 @@ function TagSelectionSheet({
 function CreateRoomScreen() {
   const router = useRouter();
   const mutation = useCreateRoomMutation();
-  const [selected, setSelected] = useState(["굿즈 줄서기", "역조공 카페", "식사 같이"]);
+  const [selected, setSelected] = useState<string[]>([]);
   const [maxMembers, setMaxMembers] = useState(4);
   const [hasOvernight, setHasOvernight] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
@@ -878,16 +876,7 @@ function DisabledFormInput({
 
 function MyRoomsScreen() {
   const [filter, setFilter] = useState<MyRoomFilter>("all");
-  const activeRooms = useMemo(
-    () =>
-      fallbackRooms
-        .flatMap((room) => {
-          const card = createMyRoomCard(room);
-          return card ? [card] : [];
-        })
-        .sort(compareMyRoomCards),
-    []
-  );
+  const activeRooms = useMemo(() => getActiveMyRoomCards(), []);
   const counts = {
     host: activeRooms.filter((room) => room.status === "host").length,
     member: activeRooms.filter((room) => room.status === "member").length,
@@ -897,7 +886,7 @@ function MyRoomsScreen() {
     if (filter === "all") return true;
     return room.status === filter;
   });
-  const pastRooms = filter === "all" ? [...pastMyRooms].sort(compareMyRoomCards) : [];
+  const pastRooms = filter === "all" ? getPastMyRoomCards() : [];
   const sections = [
     { id: "current", title: "오늘 / 이번 주", rooms: currentRooms },
     { id: "past", title: "지난 방", rooms: pastRooms }
@@ -1044,6 +1033,26 @@ function createMyRoomCard(room: Room): MyRoomCardModel | null {
     href: roomHref(room),
     countdown: room.status === "pending" ? undefined : myRoomCountdown(room.concertId),
     pendingCount: room.status === "host" ? 2 : undefined
+  };
+}
+
+function getActiveMyRoomCards() {
+  return fallbackRooms
+    .flatMap((room) => {
+      const card = createMyRoomCard(room);
+      return card ? [card] : [];
+    })
+    .sort(compareMyRoomCards);
+}
+
+function getPastMyRoomCards() {
+  return [...pastMyRooms].sort(compareMyRoomCards);
+}
+
+function getMyRoomStats() {
+  return {
+    activeRoomCount: getActiveMyRoomCards().length,
+    completedConcertCount: getPastMyRoomCards().length
   };
 }
 
@@ -1529,108 +1538,253 @@ function MemoryFeedScreen() {
 }
 
 function ProfileScreen() {
+  const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
+  const noticeIdRef = useRef(0);
+  const showWipNotice = useCallback((label: string) => {
+    noticeIdRef.current += 1;
+    setNotice({ id: noticeIdRef.current, message: `${label}은 개발중인 기능입니다` });
+  }, []);
+  useEffect(() => {
+    if (!notice) return undefined;
+
+    const timer = window.setTimeout(() => setNotice(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  const myRoomStats = getMyRoomStats();
+  const stats = [
+    { label: "참여 중인 방", value: myRoomStats.activeRoomCount },
+    { label: "완료한 공연", value: myRoomStats.completedConcertCount }
+  ];
+
   return (
     <>
-      <AppBar
-        title="프로필"
-        right={
-          <Link href="/profile/edit" className="grid h-9 w-9 place-items-center rounded-full bg-[var(--cb-surface-2)] text-[var(--cb-yellow)]" aria-label="프로필 편집">
-            <Pencil size={16} />
-          </Link>
-        }
-      />
-      <div className="body-scroll">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-16 w-16 place-items-center rounded-full border border-[var(--cb-yellow-line)] bg-[var(--cb-surface-3)] text-[22px] font-black text-[var(--cb-yellow)]">
-              {myProfile.avatar}
-            </div>
-            <div>
-              <h1 className="text-[18px] font-bold">{myProfile.nickname}</h1>
-              <p className="text-[12px] text-[var(--cb-text-3)]">콘서트 동행 메이트</p>
-            </div>
-          </div>
-          <p className="mt-4 text-[13px] leading-6 text-[var(--cb-text-2)]">{myProfile.bio}</p>
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {myProfile.tags.map((tag) => (
-              <Badge key={tag} tone="yellow">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        </Card>
-        <SectionTitle title="활동" />
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            ["참여 공연", String(myProfile.concertCount)],
-            ["동행", String(myProfile.buddyCount)],
-            ["추억", String(memories.length)]
-          ].map(([label, value]) => (
-            <Card key={label} className="text-center">
-              <div className="text-[20px] font-black text-[var(--cb-yellow)]">{value}</div>
-              <div className="text-[11px] text-[var(--cb-text-3)]">{label}</div>
-            </Card>
+      <AppBar left={<h1 className="text-[21px] font-bold leading-none tracking-[-.02em]">프로필</h1>} />
+      {notice ? (
+        <div
+          key={notice.id}
+          role="status"
+          aria-live="polite"
+          className="profile-toast pointer-events-none fixed bottom-[76px] left-1/2 z-30 w-[calc(100%-32px)] max-w-[398px] -translate-x-1/2 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[rgba(22,22,24,.96)] px-3.5 py-3 text-[12px] font-semibold text-[var(--cb-yellow-2)] shadow-[var(--sh-pop)] backdrop-blur"
+        >
+          {notice.message}
+        </div>
+      ) : null}
+      <div className="flex flex-1 flex-col overflow-auto px-4 pb-[18px] pt-2">
+        <Link
+          href="/profile/edit"
+          className="flex items-center gap-3.5 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-4 shadow-[var(--sh-card)] transition hover:border-[var(--cb-line-2)]"
+        >
+          <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full border border-[var(--cb-yellow)] bg-[var(--cb-surface-3)] text-[16px] font-bold text-[var(--cb-yellow)] shadow-[0_0_0_1px_var(--cb-yellow-line)]">
+            {myProfile.avatar}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[17px] font-bold tracking-[-.01em]">{myProfile.nickname}</span>
+            <span className="mt-1 block text-[12.5px] text-[var(--cb-text-2)]">
+              {myProfile.ageGroup} · {myProfile.gender}
+            </span>
+            <span className="mt-0.5 block text-[11px] text-[var(--cb-text-3)]">가입 {myProfile.joinedAt}</span>
+          </span>
+          <ChevronRight size={24} className="shrink-0 text-[var(--cb-text-3)]" />
+        </Link>
+
+        <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+          {stats.map((stat) => (
+            <Link
+              key={stat.label}
+              href="/my-rooms"
+              className="rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] px-2 py-3.5 text-center transition hover:border-[var(--cb-line-2)]"
+            >
+              <span className="block text-[20px] font-extrabold text-[var(--cb-yellow)]">{stat.value}</span>
+              <span className="mt-1 block text-[11px] text-[var(--cb-text-2)]">{stat.label}</span>
+            </Link>
           ))}
         </div>
-        <div className="mt-6">
-          <Button variant="outline">
-            <LogOut size={17} /> 로그아웃
-          </Button>
-        </div>
+
+        <ProfileMenuGroup title="설정">
+          <ProfileMenuButton label="알림 설정" onClick={showWipNotice} />
+          <ProfileMenuButton label="차단한 사용자" value="2명" onClick={showWipNotice} />
+          <ProfileMenuButton label="관심 공연 알림" value="ON" onClick={showWipNotice} />
+        </ProfileMenuGroup>
+
+        <ProfileMenuGroup title="고객 지원">
+          <ProfileMenuButton label="도움말 / FAQ" onClick={showWipNotice} />
+          <ProfileMenuButton label="문의하기" onClick={showWipNotice} />
+          <ProfileMenuButton label="약관 및 정책" onClick={showWipNotice} />
+          <ProfileMenuButton label="앱 버전" value="v1.0.0" onClick={showWipNotice} />
+        </ProfileMenuGroup>
+
+        <ProfileMenuGroup title="계정">
+          <Link
+            href="/login"
+            className="flex w-full items-center justify-between border-b border-[var(--cb-line)] px-1 py-[15px] text-left text-[14px] transition hover:text-[var(--cb-yellow)]"
+          >
+            <span>로그아웃</span>
+            <span className="flex items-center gap-1.5 text-[13px] text-[var(--cb-text-3)]">
+              <ChevronRight size={16} />
+            </span>
+          </Link>
+          <ProfileMenuButton label="회원 탈퇴" muted onClick={showWipNotice} />
+        </ProfileMenuGroup>
       </div>
     </>
   );
 }
 
+function ProfileMenuGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-[22px]">
+      <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[.1em] text-[var(--cb-text-3)]">{title}</div>
+      {children}
+    </section>
+  );
+}
+
+function ProfileMenuButton({
+  label,
+  value,
+  muted,
+  onClick
+}: {
+  label: string;
+  value?: string;
+  muted?: boolean;
+  onClick: (label: string) => void;
+}) {
+  return (
+    <button
+      className="flex w-full items-center justify-between border-b border-[var(--cb-line)] px-1 py-[15px] text-left text-[14px] transition hover:text-[var(--cb-yellow)]"
+      onClick={() => onClick(label)}
+      type="button"
+    >
+      <span className={muted ? "text-[var(--cb-text-3)]" : undefined}>{label}</span>
+      <span className="flex items-center gap-1.5 text-[13px] text-[var(--cb-text-3)]">
+        {value ? <span>{value}</span> : null}
+        <ChevronRight size={16} />
+      </span>
+    </button>
+  );
+}
+
+const profileAgeOptions = ["10대", "20대", "30대", "40대+", "비공개"];
+const profileGenderOptions = ["여성", "남성"];
+
 function ProfileEditScreen() {
-  const {
-    register,
-    formState: { errors, isValid }
-  } = useForm<z.infer<typeof profileSchema>>({
-    resolver: zodResolver(profileSchema),
-    mode: "onChange",
-    defaultValues: { nickname: myProfile.nickname, bio: myProfile.bio }
-  });
-  const [selectedTags, setSelectedTags] = useState(myProfile.tags);
+  const [nickname, setNickname] = useState(myProfile.nickname);
+  const [selectedAge, setSelectedAge] = useState(myProfile.ageGroup);
+  const [selectedGender, setSelectedGender] = useState(myProfile.gender);
+  const nicknameLength = Array.from(nickname).length;
+  const canSave = nicknameLength >= 2 && nicknameLength <= 12;
+  const onNicknameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextValue = Array.from(event.target.value).slice(0, 12).join("");
+    setNickname(nextValue);
+  };
 
   return (
     <>
-      <AppBar title="프로필 편집" left={<BackButton href="/profile" />} right={<Link href="/profile" className="text-[13px] font-semibold text-[var(--cb-yellow)]">저장</Link>} />
-      <form className="body-scroll flex flex-col gap-4">
-        <div className="flex justify-center py-4">
-          <div className="relative">
-            <div className="grid h-16 w-16 place-items-center rounded-full border border-[var(--cb-yellow-line)] bg-[var(--cb-surface-3)] text-[22px] font-black text-[var(--cb-yellow)]">
+      <AppBar title="프로필 수정" left={<BackButton href="/profile" />} right={<span className="w-[38px]" />} />
+      <h1 className="sr-only">프로필 수정</h1>
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => event.preventDefault()}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto px-4 pb-[18px] pt-2">
+          <button className="relative mx-auto my-1 h-[104px] w-[104px]" type="button" aria-label="사진 변경">
+            <span className="flex h-[104px] w-[104px] items-center justify-center rounded-full border border-[var(--cb-line-2)] bg-[var(--cb-surface-3)] text-[34px] font-extrabold text-[var(--cb-text-2)]">
               {myProfile.avatar}
-            </div>
-            <span className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]">
-              <Pencil size={13} />
             </span>
+            <span className="absolute bottom-0 right-0 flex h-[34px] w-[34px] items-center justify-center rounded-full border-[3px] border-[var(--cb-bg)] bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]">
+              <Camera size={16} />
+            </span>
+          </button>
+          <button className="mx-auto mb-[18px] mt-1 text-[12px] font-semibold text-[var(--cb-yellow)]" type="button">
+            사진 변경
+          </button>
+
+          <label className="flex flex-col gap-2">
+            <span className="text-[12.5px] font-semibold text-[var(--cb-text-2)]">닉네임</span>
+            <input
+              aria-describedby="profile-nickname-count"
+              className="min-h-[48px] rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 py-3 text-[14px] text-[var(--cb-text)] outline-none placeholder:text-[var(--cb-text-3)] focus:border-[var(--cb-yellow-line)]"
+              maxLength={12}
+              onChange={onNicknameChange}
+              value={nickname}
+            />
+          </label>
+          <div id="profile-nickname-count" className="mt-1 text-right text-[11px] text-[var(--cb-text-3)]">
+            {nicknameLength} / 12
           </div>
+
+          <ProfileChoiceGroup
+            label="연령대"
+            options={profileAgeOptions}
+            selected={selectedAge}
+            onSelect={setSelectedAge}
+            className="mt-4"
+          />
+          <ProfileChoiceGroup
+            label="성별"
+            options={profileGenderOptions}
+            selected={selectedGender}
+            onSelect={setSelectedGender}
+            className="mt-[18px]"
+          />
+
+          <p className="mt-4 text-[11.5px] leading-[1.55] text-[var(--cb-text-3)]">
+            연령대·성별은 방장이 승인 여부를 판단할 때 도움이 돼요. 언제든 다시 수정/숨김 가능합니다.
+          </p>
         </div>
-        <Input label="닉네임" error={errors.nickname?.message} {...register("nickname")} />
-        <Input label="소개글" multiline error={errors.bio?.message} {...register("bio")} />
-        <div>
-          <div className="mb-2 text-[12.5px] font-semibold text-[var(--cb-text-2)]">선호 태그</div>
-          <div className="flex flex-wrap gap-2">
-            {tags.slice(0, 8).map((tag) => (
-              <Chip
-                key={tag}
-                active={selectedTags.includes(tag)}
-                onClick={() => setSelectedTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]))}
-                type="button"
-              >
-                {tag}
-              </Chip>
-            ))}
-          </div>
-        </div>
-        <div className="mt-auto">
-          <Link href="/profile">
-            <Button disabled={!isValid}>저장</Button>
-          </Link>
+        <div className="shrink-0 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_22%)] px-4 py-3">
+          {canSave ? (
+            <Link
+              href="/profile"
+              className="flex h-[54px] w-full items-center justify-center rounded-[var(--r-md)] border border-[var(--cb-yellow)] bg-[var(--cb-yellow)] text-[15px] font-bold text-[var(--cb-on-yellow)] shadow-[var(--sh-glow)]"
+            >
+              저장
+            </Link>
+          ) : (
+            <button
+              className="flex h-[54px] w-full cursor-not-allowed items-center justify-center rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] text-[15px] font-bold text-[var(--cb-text-3)]"
+              disabled
+              type="button"
+            >
+              저장
+            </button>
+          )}
         </div>
       </form>
     </>
+  );
+}
+
+function ProfileChoiceGroup({
+  label,
+  options,
+  selected,
+  onSelect,
+  className
+}: {
+  label: string;
+  options: string[];
+  selected: string;
+  onSelect: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <section className={className}>
+      <div className="mb-[9px] text-[12.5px] font-semibold text-[var(--cb-text-2)]">
+        {label} <span className="font-normal text-[var(--cb-text-3)]">(선택)</span>
+      </div>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={`${label} 선택`}>
+        {options.map((option) => (
+          <Chip
+            key={option}
+            active={selected === option}
+            aria-pressed={selected === option}
+            onClick={() => onSelect(option)}
+            type="button"
+          >
+            {option}
+          </Chip>
+        ))}
+      </div>
+    </section>
   );
 }
 
