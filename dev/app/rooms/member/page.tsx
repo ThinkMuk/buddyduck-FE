@@ -7,7 +7,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   const showOpenChatModal = firstParam(query.modal) === "open-chat";
   return (
     <ScreenShell screen={getScreenById(showOpenChatModal ? "CB-08" : "CB-07B")}>
-      <RoomDetailScreen mode="member" showOpenChatModal={showOpenChatModal} />
+      <RoomDetailScreen roomId="r2" detailHref="/rooms/member" showOpenChatModal={showOpenChatModal} />
     </ScreenShell>
   );
 }

@@ -7,7 +7,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   const showApplyModal = firstParam(query.modal) === "apply";
   return (
     <ScreenShell screen={getScreenById(showApplyModal ? "CB-07Dprime" : "CB-07D")}>
-      <RoomDetailScreen mode="visitor" showApplyModal={showApplyModal} />
+      <RoomDetailScreen roomId="r4" detailHref="/rooms/visitor" showApplyModal={showApplyModal} />
     </ScreenShell>
   );
 }

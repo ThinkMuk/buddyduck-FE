@@ -36,6 +36,10 @@ describe("screen route registry", () => {
     expect(resolveScreenFromSlug(["rooms", "host"], { modal: "open-chat" })?.id).toBe("CB-08");
     expect(resolveScreenFromSlug(["rooms", "member"], { modal: "open-chat" })?.id).toBe("CB-08");
     expect(resolveScreenFromSlug(["rooms", "visitor"], { modal: "apply" })?.id).toBe("CB-07Dprime");
+    expect(resolveScreenFromSlug(["rooms", "r1"], {})?.id).toBe("CB-07A");
+    expect(resolveScreenFromSlug(["rooms", "r2"], { modal: "open-chat" })?.id).toBe("CB-08");
+    expect(resolveScreenFromSlug(["rooms", "r3"], { modal: "open-chat" })?.id).toBe("CB-07C");
+    expect(resolveScreenFromSlug(["rooms", "r4"], { modal: "apply" })?.id).toBe("CB-07Dprime");
     expect(resolveScreenFromSlug(["timetable"], { modal: "warning" })?.id).toBe("CB-11prime");
     expect(resolveScreenFromSlug(["profile", "edit"], {})?.id).toBe("CB-14prime");
     expect(getScreenById("CB-12").href).toBe("/map");

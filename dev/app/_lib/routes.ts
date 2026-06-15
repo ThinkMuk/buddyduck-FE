@@ -1,3 +1,5 @@
+import { rooms, type RoomStatus } from "@/lib/data";
+
 export type ScreenId =
   | "CB-01"
   | "CB-02"
@@ -64,12 +66,16 @@ export function getScreenById(id: ScreenId) {
 export function resolveScreenFromSlug(slug: string[], searchParams: SearchParams): AppScreen | undefined {
   const path = `/${slug.join("/")}`;
   const modal = firstParam(searchParams.modal);
+  const room = slug[0] === "rooms" && slug[1] ? rooms.find((item) => item.id === slug[1]) : undefined;
 
   if (path === "/") return getScreenById("CB-01");
   if (path === "/home") return getScreenById("CB-03");
   if (path === "/rooms" && modal === "tags") return getScreenById("CB-04prime");
   if ((path === "/rooms/host" || path === "/rooms/member") && modal === "open-chat") return getScreenById("CB-08");
   if (path === "/rooms/visitor" && modal === "apply") return getScreenById("CB-07Dprime");
+  if (room && (room.status === "host" || room.status === "member") && modal === "open-chat") return getScreenById("CB-08");
+  if (room?.status === "visitor" && modal === "apply") return getScreenById("CB-07Dprime");
+  if (room) return getScreenById(screenIdByRoomStatus(room.status));
   if (path === "/timetable" && modal === "warning") return getScreenById("CB-11prime");
 
   const match = SCREEN_ROUTES.find((screen) => screen.href.split("?")[0] === path);
@@ -78,4 +84,15 @@ export function resolveScreenFromSlug(slug: string[], searchParams: SearchParams
 
 export function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function screenIdByRoomStatus(status: RoomStatus): ScreenId {
+  const screenByStatus: Record<RoomStatus, ScreenId> = {
+    host: "CB-07A",
+    member: "CB-07B",
+    pending: "CB-07C",
+    visitor: "CB-07D"
+  };
+
+  return screenByStatus[status];
 }

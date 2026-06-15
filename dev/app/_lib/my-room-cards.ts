@@ -16,7 +16,7 @@ export type MyRoomCardModel = {
   currentMembers: number;
   maxMembers: number;
   status: MyRoomCardStatus;
-  href: string;
+  href?: string;
   countdown?: string;
   pendingCount?: number;
 };
@@ -32,8 +32,7 @@ const pastMyRooms: MyRoomCardModel[] = [
     meetTime: "12:00",
     currentMembers: 4,
     maxMembers: 4,
-    status: "past",
-    href: "/rooms/member"
+    status: "past"
   }
 ];
 
