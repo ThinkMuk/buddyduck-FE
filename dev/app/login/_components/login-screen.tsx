@@ -2,8 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { MessageCircle } from "lucide-react";
-import { Button } from "@/components/ui";
+import { buildKakaoAuthorizeUrl } from "@/lib/auth/kakao";
 
 export function LoginScreen() {
   return (
@@ -17,7 +16,9 @@ export function LoginScreen() {
           src="/images/concert-buddy-logo.png"
           width={96}
         />
-        <h1 className="mt-[22px] text-[28px] font-extrabold leading-tight tracking-normal">BuddyDuck</h1>
+        <h1 className="mt-[22px] text-[28px] font-extrabold leading-tight tracking-normal">
+          BuddyDuck
+        </h1>
         <p className="mt-2 text-[14px] leading-[1.55] text-[var(--cb-text-2)]">
           덕메를 찾고,
           <br />
@@ -27,11 +28,20 @@ export function LoginScreen() {
           <p className="mb-1 text-[11px] leading-5 text-[var(--cb-text-3)]">
             로그인 시 서비스 약관과 개인정보 처리방침에 동의합니다.
           </p>
-          <Button asChild variant="kakao">
-            <Link href="/nickname">
-              <MessageCircle size={19} /> 카카오로 시작하기
-            </Link>
-          </Button>
+          <Link
+            aria-label="카카오로 시작하기"
+            className="block w-full overflow-hidden rounded-xl transition-opacity hover:opacity-90"
+            href={buildKakaoAuthorizeUrl()}
+          >
+            <Image
+              alt="카카오로 시작하기"
+              className="h-auto w-full"
+              height={90}
+              priority
+              src="/images/kakao_login/ko/kakao_login_large_wide.png"
+              width={600}
+            />
+          </Link>
         </div>
       </div>
     </>
