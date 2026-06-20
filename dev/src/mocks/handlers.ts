@@ -5,7 +5,9 @@ export const handlers = [
   http.get("*/api/concerts", () => HttpResponse.json(concerts)),
   http.get("*/api/rooms", ({ request }) => {
     const tag = new URL(request.url).searchParams.get("tag");
-    const filteredRooms = tag ? rooms.filter((room) => room.tags.includes(tag)) : rooms;
+    const filteredRooms = tag
+      ? rooms.filter((room) => room.tags.includes(tag))
+      : rooms;
 
     return HttpResponse.json(filteredRooms);
   }),
@@ -17,17 +19,17 @@ export const handlers = [
         ...rooms[0],
         id: `draft-${Date.now()}`,
         title: body.title ?? rooms[0].title,
-        tags: body.tags ?? rooms[0].tags
+        tags: body.tags ?? rooms[0].tags,
       },
-      { status: 201 }
+      { status: 201 },
     );
   }),
   http.post("*/api/rooms/:id/apply", ({ params }) =>
     HttpResponse.json({
       ok: true,
       roomId: params.id,
-      status: "pending"
-    })
+      status: "pending",
+    }),
   ),
   http.get("*/api/profile", () => HttpResponse.json(myProfile)),
   http.patch("*/api/profile", async ({ request }) => {
@@ -35,7 +37,17 @@ export const handlers = [
 
     return HttpResponse.json({
       ...myProfile,
-      ...body
+      ...body,
     });
-  })
+  }),
+  http.patch("*/api/users/me/profile", async ({ request }) => {
+    const body = await request.json();
+
+    return HttpResponse.json({
+      isSuccess: true,
+      code: "COMMON200",
+      message: "요청에 성공했습니다.",
+      result: body,
+    });
+  }),
 ];
