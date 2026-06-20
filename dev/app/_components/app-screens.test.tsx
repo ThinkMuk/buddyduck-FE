@@ -31,6 +31,7 @@ const navigationMocks = vi.hoisted(() => ({
   back: vi.fn(),
   pathname: "/rooms",
   push: vi.fn(),
+  searchParams: "",
 }));
 
 vi.mock("next/navigation", () => ({
@@ -39,15 +40,122 @@ vi.mock("next/navigation", () => ({
     back: navigationMocks.back,
     push: navigationMocks.push,
   }),
+  useSearchParams: () => new URLSearchParams(navigationMocks.searchParams),
 }));
+
+const concertListFixture = [
+  {
+    id: 1,
+    title: "AURORA LIVE",
+    venueName: "KSPO Dome",
+    startAt: "2099-01-01T19:00:00+09:00",
+    endAt: null,
+    lat: 37.519,
+    lng: 127.127,
+    source: "KOPIS",
+    posterUrl: null,
+    area: "서울특별시",
+    genre: "대중음악",
+    timeGuidance: null,
+    openRoomCount: 3,
+  },
+  {
+    id: 2,
+    title: "MOON SYNC TOUR",
+    venueName: "잠실실내체육관",
+    startAt: "2099-01-02T19:00:00+09:00",
+    endAt: null,
+    lat: 37.5133,
+    lng: 127.1002,
+    source: "KOPIS",
+    posterUrl: null,
+    area: "서울특별시",
+    genre: "대중음악",
+    timeGuidance: null,
+    openRoomCount: 1,
+  },
+];
 
 const httpMocks = vi.hoisted(() => ({
   patch: vi.fn().mockResolvedValue({ data: { result: {} } }),
+  get: vi.fn(),
+  put: vi.fn(),
+  post: vi.fn().mockResolvedValue({
+    data: { result: { roomId: 10, scheduleId: 20 } },
+  }),
 }));
 
 vi.mock("@/lib/api/http", () => ({
-  http: { patch: httpMocks.patch },
+  http: {
+    patch: httpMocks.patch,
+    get: httpMocks.get,
+    put: httpMocks.put,
+    post: httpMocks.post,
+  },
 }));
+
+const concertDetailFixture = {
+  id: 100,
+  title: "Stadium Tour - Night 1",
+  venueName: "KSPO Dome",
+  startAt: "2099-06-15T19:00:00+09:00",
+  endAt: null,
+  lat: 37.5196,
+  lng: 127.1273,
+  source: "KOPIS",
+  posterUrl: null,
+  area: "서울특별시",
+  genre: "대중음악",
+  timeGuidance: null,
+  openRoomCount: 12,
+};
+
+const roomListItemFixture = {
+  id: 10,
+  title: "굿즈 줄 같이 서고 카페까지 같이 가요",
+  hostNickname: "moon_armies",
+  status: "OPEN",
+  isFull: false,
+  memberCount: 2,
+  maxMembers: 4,
+  meetingAt: "2099-06-15T14:00:00+09:00",
+  meetingPlaceName: "잠실역 5번 출구",
+  roomTags: ["GOODS_BUYING", "CAFE_VISIT"],
+  matchCount: 0,
+};
+
+function envelope<T>(result: T) {
+  return {
+    data: {
+      isSuccess: true,
+      code: "COMMON200",
+      message: "요청에 성공했습니다.",
+      result,
+    },
+  };
+}
+
+function mockCb04Endpoints({
+  interestTags = [] as string[],
+  roomItems = [roomListItemFixture],
+} = {}) {
+  httpMocks.get.mockImplementation((url: string) => {
+    if (url.includes("/interest-tags/me")) {
+      return Promise.resolve(envelope({ tags: interestTags }));
+    }
+    if (url.includes("/rooms")) {
+      return Promise.resolve(
+        envelope({ items: roomItems, page: 0, size: 20, hasNext: false }),
+      );
+    }
+    if (url.startsWith("/api/concerts/")) {
+      return Promise.resolve(envelope(concertDetailFixture));
+    }
+    return Promise.resolve(
+      envelope({ items: [], page: 0, size: 3, hasNext: false }),
+    );
+  });
+}
 
 function renderInShell(screenId: ScreenId, children: React.ReactNode) {
   return <ScreenShell screen={getScreenById(screenId)}>{children}</ScreenShell>;
@@ -74,6 +182,18 @@ describe("BuddyDuckApp screens", () => {
     useAppStore.setState(useAppStore.getInitialState(), true);
     navigationMocks.back.mockClear();
     navigationMocks.push.mockClear();
+    navigationMocks.searchParams = "";
+    httpMocks.get.mockReset();
+    httpMocks.put.mockReset();
+    httpMocks.put.mockResolvedValue(envelope({ tags: [] }));
+    httpMocks.get.mockResolvedValue({
+      data: {
+        isSuccess: true,
+        code: "COMMON200",
+        message: "요청에 성공했습니다.",
+        result: { items: concertListFixture, page: 0, size: 3, hasNext: false },
+      },
+    });
   });
 
   it("starts with no default interest tags", () => {
@@ -142,7 +262,7 @@ describe("BuddyDuckApp screens", () => {
     );
   });
 
-  it("filters CB-03 concerts by search text and category", () => {
+  it("debounces CB-03 search input and requests the API with the keyword", async () => {
     renderWithConcerts(renderInShell("CB-03", <HomeScreen />));
 
     expect(screen.getByText("공연 찾기")).toBeInTheDocument();
@@ -150,27 +270,31 @@ describe("BuddyDuckApp screens", () => {
       screen.queryByRole("button", { name: "공연 필터" }),
     ).not.toBeInTheDocument();
     const search = screen.getByRole("searchbox", { name: "공연 검색" });
-    expect(search).toHaveAttribute(
-      "placeholder",
-      "공연명 / 지역 / 아티스트 검색",
-    );
+    expect(search).toHaveAttribute("placeholder", "공연명 / 지역 검색");
     expect(screen.queryByText("이번 주 관심 태그")).not.toBeInTheDocument();
-    expect(screen.getByText("LUMINA")).toBeInTheDocument();
-    expect(screen.getByText("SEASON9")).toBeInTheDocument();
 
+    await waitFor(() =>
+      expect(screen.getByText("AURORA LIVE")).toBeInTheDocument(),
+    );
+
+    httpMocks.get.mockClear();
     fireEvent.change(search, { target: { value: "잠실" } });
-    expect(screen.getByText("SEASON9")).toBeInTheDocument();
-    expect(screen.queryByText("LUMINA")).not.toBeInTheDocument();
 
-    fireEvent.change(search, { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "뮤지컬" }));
-    expect(screen.getByText("AFTERGLOW")).toBeInTheDocument();
-    expect(screen.queryByText("LUMINA")).not.toBeInTheDocument();
-    expect(screen.queryByText("SEASON9")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(httpMocks.get).toHaveBeenCalledWith(
+        "/api/concerts",
+        expect.objectContaining({
+          params: expect.objectContaining({ keyword: "잠실" }),
+        }),
+      ),
+    );
   });
 
-  it("renders CB-03 bottom navigation with home, my room, and profile only", () => {
+  it("renders CB-03 bottom navigation with home, my room, and profile only", async () => {
     renderWithConcerts(renderInShell("CB-03", <HomeScreen />));
+    await waitFor(() =>
+      expect(screen.getByText("AURORA LIVE")).toBeInTheDocument(),
+    );
 
     const nav = screen.getByRole("navigation");
     expect(nav).toHaveTextContent("홈");
@@ -181,35 +305,50 @@ describe("BuddyDuckApp screens", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders CB-04 as the hi-fi room list with an empty interest tag state and fixed create action", () => {
+  it("renders CB-04 as the hi-fi room list with an empty interest tag state and fixed create action", async () => {
+    navigationMocks.searchParams = "concertId=100";
+    mockCb04Endpoints();
     renderWithConcerts(renderInShell("CB-04", <RoomListScreen />));
 
-    expect(screen.getByText("Stadium Tour - Night 1")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText("Stadium Tour - Night 1")).toBeInTheDocument(),
+    );
     expect(screen.getByText("이 공연에서 내 관심 태그")).toBeInTheDocument();
     expect(screen.getByText("설정해 둔 태그가 없습니다")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /편집/ })).toHaveAttribute(
       "href",
-      "/rooms?modal=tags",
+      "/rooms?concertId=100&modal=tags",
     );
     expect(screen.getByText("매칭 많은 순")).toBeInTheDocument();
     expect(screen.getByText("날짜순")).toBeInTheDocument();
     expect(screen.getByText("정원순")).toBeInTheDocument();
-    expect(
-      screen.getByText("굿즈 줄 같이 서고 카페까지 같이 가요"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("매칭률 96%")).toBeInTheDocument();
-    expect(screen.queryByText("3/3 match")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("굿즈 줄 같이 서고 카페까지 같이 가요"),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("굿즈 구매")).toBeInTheDocument();
+    expect(screen.getByText("카페 투어")).toBeInTheDocument();
+    expect(screen.queryByText(/match/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "방 만들기" })).toHaveAttribute(
       "href",
-      "/rooms/create",
+      "/rooms/create?concertId=100",
     );
     expect(
       screen.queryByRole("button", { name: "공유" }),
     ).not.toBeInTheDocument();
   });
 
-  it("applies hover affordances to CB-04 room cards and controls", () => {
+  it("applies hover affordances to CB-04 room cards and controls", async () => {
+    navigationMocks.searchParams = "concertId=100";
+    mockCb04Endpoints();
     renderWithConcerts(renderInShell("CB-04", <RoomListScreen />));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("굿즈 줄 같이 서고 카페까지 같이 가요"),
+      ).toBeInTheDocument(),
+    );
 
     expect(screen.getByRole("link", { name: "뒤로" })).toHaveClass(
       "hover:bg-[var(--cb-surface-3)]",
@@ -231,21 +370,14 @@ describe("BuddyDuckApp screens", () => {
     );
   });
 
-  it("applies focus-visible affordances to shared chips, cards, and bottom navigation", () => {
+  it("applies focus-visible affordances to concert cards and bottom navigation", async () => {
     renderWithConcerts(renderInShell("CB-03", <HomeScreen />));
-
-    expect(screen.getByRole("button", { name: "뮤지컬" })).toHaveClass(
-      "hover:bg-[var(--cb-surface-3)]",
-    );
-    expect(screen.getByRole("button", { name: "뮤지컬" })).toHaveClass(
-      "focus-visible:outline-2",
-    );
-    expect(screen.getByRole("button", { name: "전체" })).toHaveClass(
-      "hover:bg-[var(--cb-yellow-2)]",
+    await waitFor(() =>
+      expect(screen.getByText("AURORA LIVE")).toBeInTheDocument(),
     );
 
     const concertLink = screen.getByRole("link", {
-      name: /Moonlight Sync Live/,
+      name: /AURORA LIVE/,
     });
     expect(concertLink).toHaveClass("hover:bg-[var(--cb-surface-2)]");
     expect(concertLink).toHaveClass("active:scale-[0.99]");
@@ -268,51 +400,78 @@ describe("BuddyDuckApp screens", () => {
     expect(
       screen.getByText("최대 5개까지 선택 · 사전 정의된 태그에서 골라요"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "저장 (0/5)" })).toHaveAttribute(
-      "href",
-      "/rooms",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "굿즈 줄서기" }));
-    fireEvent.click(screen.getByRole("button", { name: "역조공 카페" }));
-    fireEvent.click(screen.getByRole("button", { name: "식사 같이" }));
-    fireEvent.click(screen.getByRole("button", { name: "입장 같이" }));
-    fireEvent.click(screen.getByRole("button", { name: "뒷풀이" }));
-
     expect(
-      screen.getByRole("link", { name: "저장 (5/5)" }),
+      screen.getByRole("button", { name: "저장 (0/5)" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "포카 교환" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "굿즈 구매" }));
+    fireEvent.click(screen.getByRole("button", { name: "카페 투어" }));
+    fireEvent.click(screen.getByRole("button", { name: "식사 같이" }));
+    fireEvent.click(screen.getByRole("button", { name: "포토 스팟" }));
     fireEvent.click(screen.getByRole("button", { name: "포카 교환" }));
+
     expect(
-      screen.getByRole("link", { name: "저장 (5/5)" }),
+      screen.getByRole("button", { name: "저장 (5/5)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "입장 대기" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "입장 대기" }));
+    expect(
+      screen.getByRole("button", { name: "저장 (5/5)" }),
     ).toBeInTheDocument();
   });
 
-  it("renders CB-05 as the hi-fi create room form and reuses the tag modal selector", () => {
+  it("saves CB-04prime interest tags via PUT and navigates back to the room list", async () => {
+    navigationMocks.searchParams = "concertId=100";
+    mockCb04Endpoints();
+    renderWithConcerts(
+      renderInShell("CB-04prime", <RoomListScreen showTagModal />),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "굿즈 구매" }));
+    fireEvent.click(screen.getByRole("button", { name: "카페 투어" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장 (2/5)" }));
+
+    await waitFor(() =>
+      expect(httpMocks.put).toHaveBeenCalledWith(
+        "/api/concerts/100/interest-tags/me",
+        { tags: ["GOODS_BUYING", "CAFE_VISIT"] },
+      ),
+    );
+    await waitFor(() =>
+      expect(navigationMocks.push).toHaveBeenCalledWith("/rooms?concertId=100"),
+    );
+  });
+
+  it("renders CB-05 create room wired to concert detail and the tag modal", async () => {
+    navigationMocks.searchParams = "concertId=100";
+    httpMocks.get.mockResolvedValue(envelope(concertDetailFixture));
     renderWithConcerts(renderInShell("CB-05", <CreateRoomScreen />));
 
     expect(screen.getByText(/방장 승인/)).toBeInTheDocument();
+    // 공연 / 행사 장소 come from CONCERT-002 detail (eventPlace source), not hardcoded.
     const concertInput = screen.getByLabelText("공연");
     expect(concertInput).toBeDisabled();
-    expect(concertInput).toHaveValue("Stadium Tour — Night 1");
+    await waitFor(() =>
+      expect(concertInput).toHaveValue("Stadium Tour - Night 1"),
+    );
     expect(concertInput.closest(".body-scroll")).toHaveClass("!pt-[6px]");
-    expect(
-      screen.getByDisplayValue("굿즈 줄 같이 서고 카페까지 같이 가요"),
-    ).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/조용히 줄서고/)).toBeInTheDocument();
+    const venueInput = screen.getByLabelText("행사 장소 (공연장)");
+    expect(venueInput).toBeDisabled();
+    expect(venueInput).toHaveValue("KSPO Dome");
+
     expect(screen.getByText("방 태그")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "태그 추가" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("굿즈 줄서기")).not.toBeInTheDocument();
-    const venueInput = screen.getByLabelText("행사 장소 (공연장)");
-    expect(venueInput).toBeDisabled();
-    expect(venueInput).toHaveValue("KSPO Dome");
+    expect(screen.queryByText("굿즈 구매")).not.toBeInTheDocument();
+
+    // 1박 일정 toggle was removed; the meeting place is now a Kakao map picker.
+    expect(screen.queryByText("1박 일정")).not.toBeInTheDocument();
     expect(screen.getByText("집합 장소")).toBeInTheDocument();
+    expect(screen.getByLabelText("집합 장소 검색")).toBeInTheDocument();
+
     const meetTimeInput = screen.getByLabelText("집합 시간");
     expect(meetTimeInput).toHaveAttribute("type", "datetime-local");
-    expect(meetTimeInput).toHaveValue("2026-06-15T14:00");
     const showPicker = vi.fn();
     Object.defineProperty(meetTimeInput, "showPicker", {
       configurable: true,
@@ -321,6 +480,7 @@ describe("BuddyDuckApp screens", () => {
     expect(meetTimeInput).toHaveClass("cursor-pointer");
     expect(fireEvent.pointerDown(meetTimeInput)).toBe(false);
     expect(showPicker).toHaveBeenCalledTimes(1);
+
     const submitButton = screen.getByRole("button", { name: "방 만들기" });
     expect(submitButton).toBeDisabled();
     expect(submitButton.parentElement).toHaveClass("fixed");
@@ -337,16 +497,18 @@ describe("BuddyDuckApp screens", () => {
     expect(
       screen.getByRole("button", { name: "저장 (0/4)" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "굿즈 줄서기" }));
-    fireEvent.click(screen.getByRole("button", { name: "역조공 카페" }));
+    fireEvent.click(screen.getByRole("button", { name: "굿즈 구매" }));
+    fireEvent.click(screen.getByRole("button", { name: "카페 투어" }));
     fireEvent.click(screen.getByRole("button", { name: "식사 같이" }));
-    fireEvent.click(screen.getByRole("button", { name: "입장 같이" }));
+    fireEvent.click(screen.getByRole("button", { name: "포토 스팟" }));
     expect(screen.getByRole("button", { name: "포카 교환" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "저장 (4/4)" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "저장 (4/4)" }));
-    expect(submitButton).toBeEnabled();
+    // Still disabled: required title / 집합 시간 / 오픈채팅 URL / 집합 장소 not yet provided.
+    expect(submitButton).toBeDisabled();
+    expect(httpMocks.post).not.toHaveBeenCalled();
   });
 
   it("renders CB-06 as the hi-fi my rooms list with status filters and time sorting", () => {

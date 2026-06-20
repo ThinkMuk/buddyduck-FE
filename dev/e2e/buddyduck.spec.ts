@@ -102,9 +102,14 @@ test.describe("BuddyDuck runtime UI", () => {
       });
     }
 
-    test("CB-02 nickname onboarding submits the profile and continues to home", async ({
+    test("CB-02 nickname onboarding gates the 완료 button until all fields are valid", async ({
       page,
     }) => {
+      // PROFILE-002 (PATCH /api/users/me/profile) is connected to the real backend and
+      // has no MSW mock, so the actual submit requires a real authenticated session that
+      // e2e can't provide. This test therefore covers the client-side validation gating
+      // only — the part that's independent of backend auth — not the post-submit
+      // navigation to /home.
       await page.goto("/nickname");
       await page.getByPlaceholder("닉네임 입력").fill("duck");
       await expect(page.getByText("사용 가능한 닉네임")).toBeVisible();
@@ -112,27 +117,17 @@ test.describe("BuddyDuck runtime UI", () => {
       await page.getByRole("button", { name: "20대" }).click();
       await expect(page.getByRole("button", { name: "완료" })).toBeDisabled();
       await page.getByRole("button", { name: "여성" }).click();
-      await page.getByRole("button", { name: "완료" }).click();
-      await expect(page).toHaveURL(/\/home$/);
-      await expect(
-        page.getByRole("heading", { name: "공연 찾기" }),
-      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "완료" })).toBeEnabled();
     });
 
     test("home and room list render cards, chips, filter modal, and bottom nav", async ({
       page,
     }) => {
       await page.goto("/home");
-      await expect(
-        page.getByPlaceholder("공연명 / 지역 / 아티스트 검색"),
-      ).toBeVisible();
-      await expect(page.getByText("LUMINA")).toBeVisible();
+      await expect(page.getByPlaceholder("공연명 / 지역 검색")).toBeVisible();
+      const concertCards = page.locator('a[href^="/rooms?concertId="]');
+      await expect(concertCards.first()).toBeVisible();
       await expect(page.getByText("이번 주 관심 태그")).toHaveCount(0);
-      await page.getByRole("button", { name: "뮤지컬" }).click();
-      await expect(page.getByText("AFTERGLOW")).toBeVisible();
-      await expect(page.getByText("LUMINA")).toHaveCount(0);
-      await page.getByRole("button", { name: "전체" }).click();
-      await expect(page.getByText("LUMINA")).toBeVisible();
 
       const bottomNav = page.locator("nav").last();
       await expect(
@@ -148,8 +143,8 @@ test.describe("BuddyDuck runtime UI", () => {
         bottomNav.getByRole("link", { name: "동행", exact: true }),
       ).toHaveCount(0);
 
-      await page.getByRole("link", { name: /Moonlight Sync Live/ }).click();
-      await expect(page).toHaveURL(/\/rooms$/);
+      await page.locator('a[href^="/rooms?concertId="]').first().click();
+      await expect(page).toHaveURL(/\/rooms\?concertId=/);
       await expect(page.getByText("이 공연에서 내 관심 태그")).toBeVisible();
       await expect(page.getByText("설정해 둔 태그가 없습니다")).toBeVisible();
       await page.getByRole("link", { name: /편집/ }).click();
@@ -157,7 +152,7 @@ test.describe("BuddyDuck runtime UI", () => {
         page.getByRole("dialog", { name: "관심 태그 선택" }),
       ).toBeVisible();
       await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(/\/rooms$/);
+      await expect(page).toHaveURL(/\/rooms\?concertId=/);
 
       await bottomNav
         .getByRole("link", { name: "프로필", exact: true })
@@ -175,25 +170,8 @@ test.describe("BuddyDuck runtime UI", () => {
       await page.goto("/home");
 
       const bodyScroll = page.locator(".body-scroll").first();
-      const chipScroller = page
-        .getByRole("button", { name: "지역" })
-        .locator("..");
 
       await expect(bodyScroll).toHaveCSS("scrollbar-width", "none");
-      await expect(chipScroller).toHaveCSS("scrollbar-width", "none");
-
-      const scrollState = await chipScroller.evaluate((element) => {
-        const maxScrollLeft = element.scrollWidth - element.clientWidth;
-        element.scrollLeft = maxScrollLeft;
-
-        return {
-          maxScrollLeft,
-          scrollLeft: element.scrollLeft,
-        };
-      });
-
-      expect(scrollState.maxScrollLeft).toBeGreaterThan(0);
-      expect(scrollState.scrollLeft).toBeGreaterThan(0);
     });
 
     test("key non-profile controls show hover and focus affordances", async ({
@@ -202,14 +180,16 @@ test.describe("BuddyDuck runtime UI", () => {
       await page.setViewportSize({ width: 430, height: 932 });
       await page.goto("/home");
 
-      const musicalChip = page.getByRole("button", { name: "뮤지컬" });
-      await musicalChip.hover();
-      await expect(musicalChip).toHaveCSS(
+      const firstConcertCard = page
+        .locator('a[href^="/rooms?concertId="]')
+        .first();
+      await firstConcertCard.hover();
+      await expect(firstConcertCard).toHaveCSS(
         "background-color",
-        "rgb(39, 39, 44)",
+        "rgb(30, 30, 34)",
       );
-      await musicalChip.focus();
-      await expect(musicalChip).toHaveCSS("outline-style", "solid");
+      await firstConcertCard.focus();
+      await expect(firstConcertCard).toHaveCSS("outline-style", "solid");
 
       await page.goto("/rooms");
       const createRoomFab = page.getByRole("link", { name: "방 만들기" });
@@ -250,30 +230,41 @@ test.describe("BuddyDuck runtime UI", () => {
       expect(Math.round(scrolledBox!.y)).toBe(Math.round(initialBox!.y));
     });
 
-    test("create room validates form and routes to host detail", async ({
+    test("create room carries concertId and gates submit on required inputs", async ({
       page,
     }) => {
-      await page.goto("/rooms/create");
+      // FAB must preserve concertId into the create route (cross-screen param care).
+      await page.goto("/rooms?concertId=100");
       await expect(
-        page.getByRole("button", { name: "방 만들기" }),
-      ).toBeDisabled();
+        page.getByRole("link", { name: "방 만들기" }),
+      ).toHaveAttribute("href", /\/rooms\/create\?concertId=100/);
+
+      await page.goto("/rooms/create?concertId=100");
+      const submit = page.getByRole("button", { name: "방 만들기" });
+      await expect(submit).toBeDisabled();
+
       await page.getByRole("button", { name: "태그 추가" }).click();
       await expect(
         page.getByRole("dialog", { name: "방 태그 선택" }),
       ).toBeVisible();
-      await page.getByRole("button", { name: "굿즈 줄서기" }).click();
+      await page.getByRole("button", { name: "굿즈 구매" }).click();
       await page.getByRole("button", { name: "저장 (1/4)" }).click();
-      await expect(
-        page.getByRole("button", { name: "방 만들기" }),
-      ).toBeEnabled();
+
       await page.getByLabel("방 제목").fill("공연 전 굿즈 줄 같이 서요");
       await page
         .getByLabel("한 줄 소개")
         .fill("공연 전 굿즈 수령 후 카페에서 쉬다가 같이 입장해요.");
-      await page.getByLabel("집합 장소").fill("잠실역 5번 출구");
-      await page.getByRole("button", { name: "방 만들기" }).click();
-      await expect(page).toHaveURL(/\/rooms\/host$/);
-      await expect(page.getByText("내 역할: 방장")).toBeVisible();
+      await page.getByLabel("집합 시간").fill("2026-06-15T14:00");
+      await page
+        .getByLabel(/오픈채팅 URL/)
+        .fill("https://open.kakao.com/o/test");
+
+      // meetingPlace is chosen via the Kakao map picker (keyword search / map click).
+      await expect(page.getByLabel("집합 장소 검색")).toBeVisible();
+
+      // Without a picked meeting place the form stays disabled; the POST is Bearer-gated
+      // and cannot be exercised end-to-end without a real Kakao session (see ROOM-002).
+      await expect(submit).toBeDisabled();
     });
 
     test("room detail states and apply modal behave correctly", async ({
@@ -602,10 +593,15 @@ test.describe("BuddyDuck runtime UI", () => {
     }) => {
       await page.goto("/home");
 
-      await page.getByRole("link", { name: /Moonlight Sync Live/ }).click();
-      await expect(page).toHaveURL(/\/rooms$/);
+      await page.locator('a[href^="/rooms?concertId="]').first().click();
+      await expect(page).toHaveURL(/\/rooms\?concertId=/);
+      await expect(page.getByText("이 공연에서 내 관심 태그")).toBeVisible();
 
-      await page.getByRole("link", { name: /첫콘이라 동선/ }).click();
+      // CB-04 room cards now come from the live ROOM-001 endpoint (temp
+      // mocked); room detail (CB-07) is still backed by the legacy static
+      // dataset, so this flow continues from a known CB-07 fixture room
+      // rather than the dynamic CB-04 card href.
+      await page.goto("/rooms/r4");
       await expect(page).toHaveURL(/\/rooms\/r4$/);
       await page.getByRole("link", { name: "입장 신청" }).click();
       await expect(
