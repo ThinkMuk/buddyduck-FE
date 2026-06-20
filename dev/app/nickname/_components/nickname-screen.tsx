@@ -74,7 +74,7 @@ export function NicknameScreen() {
               }
             >
               {nicknameLength === 0
-                ? "한글·영문·숫자·_ 만 가능. 2 ~ 12자."
+                ? "한글·영문·숫자·_·- 만 가능. 2 ~ 12자."
                 : isAvailable
                   ? "사용 가능한 닉네임 형식이에요."
                   : "닉네임을 확인해 주세요."}

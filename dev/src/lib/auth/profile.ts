@@ -10,9 +10,36 @@ type CompleteProfilePayload = {
   gender: Gender;
 };
 
+// Transcribed field-for-field from PROFILE-002's Response table (result.*),
+// including nullability: ageRange/gender are Nullable=Y, the rest Nullable=N.
+export type CompleteProfileResult = {
+  id: number;
+  nickname: string;
+  ageRange: AgeRange | null;
+  gender: Gender | null;
+  profileCompleted: boolean;
+  avatarColor: string;
+};
+
+type ApiEnvelope<T> = {
+  isSuccess: boolean;
+  code: string;
+  message: string;
+  result: T;
+};
+
+export async function completeProfile(
+  payload: CompleteProfilePayload,
+): Promise<CompleteProfileResult> {
+  const response = await http.patch<ApiEnvelope<CompleteProfileResult>>(
+    "/api/users/me/profile",
+    payload,
+  );
+  return response.data.result;
+}
+
 export function useCompleteProfileMutation() {
   return useMutation({
-    mutationFn: (payload: CompleteProfilePayload) =>
-      http.patch("/api/users/me/profile", payload),
+    mutationFn: completeProfile,
   });
 }
