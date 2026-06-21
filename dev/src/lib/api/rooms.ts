@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import type { AgeRange, Gender } from "@/lib/auth/profile";
 import { http } from "@/lib/api/http";
 import { mswReadyPromise } from "@/mocks/ready";
 
@@ -145,5 +146,97 @@ export function useCreateRoomMutation() {
         queryKey: ["rooms"],
         refetchType: "all",
       }),
+  });
+}
+
+// ROOM-003 GET /api/rooms/{roomId} — CB-07A/B/C/D Room Detail 통합 조회 (Bearer auth).
+// Fields transcribed 1:1 from the Notion Response table, including nullability.
+// roomStatus / viewerRole / viewerJoinStatus are declared as open enums ("... 등") in the
+// spec, so they stay typed as `string` (same precedent as ROOM-004 in my-rooms.ts); the
+// screen compares against the documented values. ageRange / gender / member role /
+// slotType are closed enums and use their union types.
+export type RoomPermissions = {
+  canRequestJoin: boolean;
+  canApproveJoinRequest: boolean;
+  canViewOpenChat: boolean;
+  canOpenTimeline: boolean;
+  canEditRoom: boolean;
+};
+
+export type RoomDetailConcert = {
+  id: number;
+  title: string;
+  startAt: string;
+  venueName: string;
+};
+
+export type RoomMemberRole = "HOST" | "MEMBER";
+
+export type RoomMember = {
+  userId: number;
+  nickname: string;
+  ageRange: AgeRange;
+  gender: Gender;
+  role: RoomMemberRole;
+  sharedInterestCount: number;
+};
+
+export type SchedulePreviewSlotType = "MEETING" | "PLACE" | "CONCERT";
+
+export type SchedulePreviewSlot = {
+  slotId: number;
+  order: number;
+  title: string;
+  placeId: number | null;
+  placeName: string | null;
+  slotType: SchedulePreviewSlotType;
+  category: SchedulePreviewSlotType;
+  startAt: string;
+  endAt: string;
+  dwellMinutes: number;
+  locked: boolean;
+};
+
+export type RoomDetail = {
+  id: number;
+  title: string;
+  description: string | null;
+  roomStatus: string;
+  viewerRole: string;
+  viewerJoinStatus: string;
+  permissions: RoomPermissions;
+  pendingRequestCount: number;
+  concert: RoomDetailConcert;
+  meetingAt: string;
+  meetingPlaceName: string;
+  meetingPlaceAddress: string;
+  roomTags: RoomTag[];
+  memberCount: number;
+  maxMembers: number;
+  members: RoomMember[];
+  schedulePreview: SchedulePreviewSlot[];
+};
+
+export async function fetchRoomDetail(
+  roomId: number | string,
+): Promise<RoomDetail> {
+  const response = await http.get<ApiEnvelope<RoomDetail>>(
+    `/api/rooms/${roomId}`,
+  );
+  return response.data.result;
+}
+
+export function useRoomDetail(roomId: number | string | null) {
+  // See src/lib/api/concerts.ts §"MSW registration race" — gate the on-mount query
+  // until the dev MSW worker has settled so the first request can't leak past it.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    mswReadyPromise.then(() => setReady(true));
+  }, []);
+
+  return useQuery({
+    queryKey: ["room", roomId],
+    queryFn: () => fetchRoomDetail(roomId!),
+    enabled: ready && roomId != null && roomId !== "",
   });
 }

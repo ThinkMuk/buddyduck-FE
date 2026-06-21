@@ -35,12 +35,11 @@ function groupLabel(group: MyRoomGroup) {
   return { host: "HOST", member: "참여중", pending: "대기중", other: "참여" }[group];
 }
 
-// roomId-only navigation: the room-detail screens (CB-07x) are placeholder routes keyed
-// by role, not yet connected to a per-id detail API, so link to the role-appropriate one.
-function detailHref(group: MyRoomGroup) {
-  if (group === "host") return "/rooms/host";
-  if (group === "pending") return "/rooms/pending";
-  return "/rooms/member";
+// roomId-based navigation to the backend-driven room detail (CB-07A/B/C/D via ROOM-003).
+// The detail screen reads viewerRole/permissions from the API, so a single per-id route
+// serves every role — no need to pre-select a role-specific placeholder route here.
+function detailHref(item: MyRoomItem) {
+  return `/rooms/${item.roomId}?back=${encodeURIComponent("/my-rooms")}`;
 }
 
 function formatConcertDayLabel(startAt: string) {
@@ -158,7 +157,7 @@ function MyRoomCard({ item }: { item: MyRoomItem }) {
 
   return (
     <Link
-      href={detailHref(group)}
+      href={detailHref(item)}
       className={cn(
         "relative mx-4 mb-3 flex gap-3.5 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-3.5 shadow-[var(--sh-card)] transition duration-150 hover:border-[var(--cb-line-2)] hover:bg-[var(--cb-surface-2)] active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cb-yellow)]",
         dimmed && "opacity-[.72]"

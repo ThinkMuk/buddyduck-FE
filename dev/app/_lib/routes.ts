@@ -86,6 +86,19 @@ export function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+// Validates a query-supplied return path so back-navigation can only target in-app routes.
+// Guards against open redirects: must be an absolute in-app path ("/...") and must not be a
+// protocol-relative ("//host") or backslash-smuggled ("/\\host") URL. Returns the path when
+// safe, otherwise null so callers can fall back to a known-good destination.
+export function safeInternalPath(
+  value: string | string[] | undefined,
+): string | null {
+  const path = firstParam(value);
+  if (!path || path[0] !== "/") return null;
+  if (path[1] === "/" || path[1] === "\\") return null;
+  return path;
+}
+
 function screenIdByRoomStatus(status: RoomStatus): ScreenId {
   const screenByStatus: Record<RoomStatus, ScreenId> = {
     host: "CB-07A",

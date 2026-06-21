@@ -199,7 +199,7 @@ export function RoomListScreen({
                   <RoomCard
                     key={room.id}
                     room={room}
-                    href={`/rooms/${room.id}`}
+                    href={`/rooms/${room.id}?back=${encodeURIComponent(roomsHref)}`}
                     selectedTags={selectedTags}
                   />
                 ))}
