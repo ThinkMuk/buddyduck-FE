@@ -5,3 +5,6 @@
 /example/
 .planning/
 stacks.md
+
+# knowledge 도구 로컬 상태 저장소 (도구 런타임 산출물)
+/data/
