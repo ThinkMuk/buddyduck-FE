@@ -4,8 +4,8 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppBar } from "@/components/ui";
-import { myProfile } from "@/lib/data";
-import { getMyRoomStats } from "../../_lib/my-room-cards";
+import { useMyProfile } from "@/lib/api/users";
+import { buildProfileMeta, getAvatarInitial } from "../_lib/profile-display";
 
 export function ProfileScreen() {
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
@@ -20,10 +20,10 @@ export function ProfileScreen() {
     const timer = window.setTimeout(() => setNotice(null), 1600);
     return () => window.clearTimeout(timer);
   }, [notice]);
-  const myRoomStats = getMyRoomStats();
+  const { data: profile, isLoading: isProfileLoading } = useMyProfile();
   const stats = [
-    { label: "참여 중인 방", value: myRoomStats.activeRoomCount },
-    { label: "완료한 공연", value: myRoomStats.completedConcertCount }
+    { label: "참여 중인 방", value: profile?.participatingRoomCount },
+    { label: "신청 대기 중인 방", value: profile?.pendingRoomCount }
   ];
 
   return (
@@ -44,16 +44,30 @@ export function ProfileScreen() {
           href="/profile/edit"
           className="flex items-center gap-3.5 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-4 shadow-[var(--sh-card)] transition hover:border-[var(--cb-line-2)]"
         >
-          <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full border border-[var(--cb-yellow)] bg-[var(--cb-surface-3)] text-[16px] font-bold text-[var(--cb-yellow)] shadow-[0_0_0_1px_var(--cb-yellow-line)]">
-            {myProfile.avatar}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[17px] font-bold tracking-[-.01em]">{myProfile.nickname}</span>
-            <span className="mt-1 block text-[12.5px] text-[var(--cb-text-2)]">
-              {myProfile.ageGroup} · {myProfile.gender}
-            </span>
-            <span className="mt-0.5 block text-[11px] text-[var(--cb-text-3)]">가입 {myProfile.joinedAt}</span>
-          </span>
+          {isProfileLoading || !profile ? (
+            <>
+              <span className="grid h-[46px] w-[46px] shrink-0 animate-pulse place-items-center rounded-full border border-[var(--cb-line)] bg-[var(--cb-surface-3)]" />
+              <span className="min-w-0 flex-1">
+                <span className="block h-[17px] w-28 animate-pulse rounded bg-[var(--cb-surface-3)]" />
+                <span className="mt-2 block h-[12px] w-20 animate-pulse rounded bg-[var(--cb-surface-3)]" />
+              </span>
+            </>
+          ) : (
+            <>
+              <span
+                className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full text-[16px] font-bold text-[var(--cb-on-yellow)] shadow-[0_0_0_1px_var(--cb-yellow-line)]"
+                style={{ backgroundColor: profile.avatarColor }}
+              >
+                {getAvatarInitial(profile.nickname)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[17px] font-bold tracking-[-.01em]">{profile.nickname}</span>
+                <span className="mt-1 block text-[12.5px] text-[var(--cb-text-2)]">
+                  {buildProfileMeta(profile.ageRange, profile.gender)}
+                </span>
+              </span>
+            </>
+          )}
           <ChevronRight size={24} className="shrink-0 text-[var(--cb-text-3)]" />
         </Link>
 
@@ -64,7 +78,9 @@ export function ProfileScreen() {
               href="/my-rooms"
               className="rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] px-2 py-3.5 text-center transition hover:border-[var(--cb-line-2)]"
             >
-              <span className="block text-[20px] font-extrabold text-[var(--cb-yellow)]">{stat.value}</span>
+              <span className="block text-[20px] font-extrabold text-[var(--cb-yellow)]">
+                {isProfileLoading || stat.value === undefined ? "–" : stat.value}
+              </span>
               <span className="mt-1 block text-[11px] text-[var(--cb-text-2)]">{stat.label}</span>
             </Link>
           ))}
