@@ -58,9 +58,9 @@ genuinely match more than one of the given codes — implement them once, not pe
 
 ## 2. Find candidate API specs in Notion
 
-The target database is **"BuddyDuck API 명세"**, embedded under the "작업실" section of
-the **"클라우드 컴퓨팅 프로젝트"** page. As of this skill's writing, its data source id is
-`4fea77ff-d67f-8218-8677-8734bcfa877b`.
+The target database is **"BuddyDuck API 명세"**, located directly under the
+**"클라우드 컴퓨팅 프로젝트"** page (Notion path: 클라우드 컴퓨팅 프로젝트 → BuddyDuck API 명세). As of this skill's writing, its data source id is
+`1a8a77ff-d67f-833c-ba6b-873587b2e669`.
 
 Try that id directly first with `API-query-data-source` (filter on the
 `사용 화면` property containing the code). If it 404s or the workspace has moved on,

@@ -37,9 +37,9 @@ genuinely match more than one of the given codes — implement them once, not pe
 
 ## 2. Find candidate API specs in Notion
 
-The target database is **"BuddyDuck API 명세"**, embedded under the "작업실" section of
-the **"클라우드 컴퓨팅 프로젝트"** page. As of this skill's writing, its data source ID is
-`collection://4fea77ff-d67f-8218-8677-8734bcfa877b`.
+The target database is **"BuddyDuck API 명세"**, located directly under the
+**"클라우드 컴퓨팅 프로젝트"** page (Notion path: 클라우드 컴퓨팅 프로젝트 → BuddyDuck API 명세). As of this skill's writing, its data source ID is
+`collection://1a8a77ff-d67f-833c-ba6b-873587b2e669`.
 
 Try that ID directly first. If it 404s or the workspace has moved on, re-find it:
 `notion-search` for `"BuddyDuck API 명세"`, fetch the result of `type: "database"`, and
@@ -53,7 +53,7 @@ about upgrading. There's no way to deterministically list every row. Instead:
 ```
 notion-search({
   query: "<the wireframe code, e.g. CB-03>",
-  data_source_url: "collection://4fea77ff-d67f-8218-8677-8734bcfa877b",
+  data_source_url: "collection://1a8a77ff-d67f-833c-ba6b-873587b2e669",
   page_size: 25
 })
 ```
