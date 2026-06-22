@@ -53,6 +53,8 @@ export function useSaveInterestTagsMutation(concertId: string | null) {
     mutationFn: (tags: string[]) => saveInterestTags(concertId!, tags),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["interest-tags", concertId] });
+      // 저장된 관심태그가 바뀌면 방 목록의 matchCount(서버 계산)도 달라지므로 함께 갱신한다.
+      queryClient.invalidateQueries({ queryKey: ["rooms", concertId] });
     },
   });
 }

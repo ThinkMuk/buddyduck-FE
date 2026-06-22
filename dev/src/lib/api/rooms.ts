@@ -59,21 +59,20 @@ export type RoomListResult = {
 
 export async function fetchRoomList(
   concertId: string,
-  params: { tags?: string[]; status?: string } = {},
+  params: { status?: string } = {},
 ): Promise<RoomListResult> {
+  // NOTE: `tags`를 쿼리 파라미터로 보내지 않는다. 백엔드는 `tags`를 "이 태그를 가진 방만"
+  // 으로 거르는 필터로 처리하기 때문에, 내 관심태그와 안 겹치는 공개 방(예: 방금 만든 방)이
+  // 목록에서 사라진다. CB-04는 이 공연의 모든 공개 방을 보여주는 화면이므로 필터를 걸지 않는다.
+  // `matchCount`(정렬용)는 서버가 저장된 내 관심태그 기준으로 계산해 주므로 파라미터 없이도 정확하다.
   const response = await http.get<ApiEnvelope<RoomListResult>>(
     `/api/concerts/${concertId}/rooms`,
-    {
-      params: {
-        ...params,
-        tags: params.tags?.length ? params.tags.join(",") : undefined,
-      },
-    },
+    { params },
   );
   return response.data.result;
 }
 
-export function useRoomList(concertId: string | null, tags: string[]) {
+export function useRoomList(concertId: string | null) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -81,9 +80,13 @@ export function useRoomList(concertId: string | null, tags: string[]) {
   }, []);
 
   return useQuery({
-    queryKey: ["rooms", concertId, tags],
-    queryFn: () => fetchRoomList(concertId!, { tags }),
+    queryKey: ["rooms", concertId],
+    queryFn: () => fetchRoomList(concertId!),
     enabled: ready && !!concertId,
+    // CB-04 목록은 항상 최신 서버 상태를 반영해야 한다(방 생성/마감/멤버 변동이 잦음).
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
   });
 }
 

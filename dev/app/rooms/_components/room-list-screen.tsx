@@ -38,10 +38,7 @@ export function RoomListScreen({
   const { data: concert } = useConcertDetail(concertId);
   const { data: interestTagsData } = useInterestTags(concertId);
   const { selectedTags, toggleTag, setSelectedTags } = useAppStore();
-  const { data: roomListData, isLoading } = useRoomList(
-    concertId,
-    selectedTags,
-  );
+  const { data: roomListData, isLoading } = useRoomList(concertId);
   const saveInterestTagsMutation = useSaveInterestTagsMutation(concertId);
 
   useEffect(() => {
