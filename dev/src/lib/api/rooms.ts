@@ -240,3 +240,39 @@ export function useRoomDetail(roomId: number | string | null) {
     enabled: ready && roomId != null && roomId !== "",
   });
 }
+
+// OPENCHAT-001 GET /api/rooms/{roomId}/open-chat — CB-08 오픈채팅 정보 조회 (Bearer auth).
+// Per the spec's 협업 참고 the open-chat URL/password is intentionally NOT embedded in
+// ROOM-003's room detail response — it is fetched separately, only when the CB-07 → CB-08
+// 오픈채팅 모달 is opened by a viewer the backend allows (permissions.canViewOpenChat).
+// Fields transcribed 1:1 from the Response table: openChatUrl is non-null, openChatPassword
+// is nullable (방에 비밀번호가 없으면 null). 403 COMMON403 / 404 COMMON404 are expected for
+// a viewer who isn't an approved member/host, so the query does not retry.
+export type OpenChatInfo = {
+  openChatUrl: string;
+  openChatPassword: string | null;
+};
+
+export async function fetchOpenChat(
+  roomId: number | string,
+): Promise<OpenChatInfo> {
+  const response = await http.get<ApiEnvelope<OpenChatInfo>>(
+    `/api/rooms/${roomId}/open-chat`,
+  );
+  return response.data.result;
+}
+
+export function useOpenChat(roomId: number | string | null, enabled: boolean) {
+  // Same MSW registration-race gate as the other on-mount room reads.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    mswReadyPromise.then(() => setReady(true));
+  }, []);
+
+  return useQuery({
+    queryKey: ["open-chat", roomId],
+    queryFn: () => fetchOpenChat(roomId!),
+    enabled: ready && enabled && roomId != null && roomId !== "",
+    retry: false,
+  });
+}

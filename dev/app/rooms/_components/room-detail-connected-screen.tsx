@@ -8,6 +8,7 @@ import {
   Clock3,
   Lock,
   MapPin,
+  MessageCircle,
   Tag,
   Users,
   X,
@@ -21,6 +22,7 @@ import { buildProfileMeta } from "../../profile/_lib/profile-display";
 import type { AgeRange, Gender } from "@/lib/auth/profile";
 import {
   getRoomTagLabel,
+  useOpenChat,
   useRoomDetail,
   type RoomDetail,
   type RoomMember,
@@ -58,10 +60,12 @@ function deriveMode(viewerRole: string, viewerJoinStatus: string): ViewerMode {
 export function RoomDetailConnectedScreen({
   roomId,
   showApplyModal = false,
+  showOpenChatModal = false,
   backHref,
 }: {
   roomId: string;
   showApplyModal?: boolean;
+  showOpenChatModal?: boolean;
   backHref?: string;
 }) {
   const detailHref = `/rooms/${roomId}`;
@@ -123,7 +127,15 @@ export function RoomDetailConnectedScreen({
 
   return (
     <>
-      <AppBar title="방 상세" left={<BackButton href={resolvedBackHref} />} />
+      <AppBar
+        title="방 상세"
+        left={<BackButton href={resolvedBackHref} />}
+        right={
+          room.permissions.canViewOpenChat ? (
+            <OpenChatButton detailHref={detailHref} />
+          ) : undefined
+        }
+      />
       {notice ? <RoomToast key={notice.id} message={notice.message} /> : null}
       <div className="min-h-0 flex-1 overflow-y-auto pb-5">
         <RoomDetailHero
@@ -152,7 +164,24 @@ export function RoomDetailConnectedScreen({
           onNotice={showNotice}
         />
       ) : null}
+      {showOpenChatModal && room.permissions.canViewOpenChat ? (
+        <OpenChatModal roomId={roomId} onNotice={showNotice} />
+      ) : null}
     </>
+  );
+}
+
+// CB-08 진입점: CB-07 우측 상단 '오픈채팅' 버튼. canViewOpenChat 뷰어에게만 노출되며
+// ?modal=open-chat 으로 모달을 연다(정적 와이어프레임 RoomAppBarActions와 동일한 패턴).
+function OpenChatButton({ detailHref }: { detailHref: string }) {
+  return (
+    <Link
+      href={`${detailHref}?modal=open-chat`}
+      className="inline-flex h-[34px] items-center gap-1.5 rounded-[var(--r-pill)] bg-[var(--cb-yellow)] px-3 text-[12px] font-bold text-[var(--cb-on-yellow)] shadow-[var(--sh-glow)] transition duration-150 hover:bg-[var(--cb-yellow-2)] active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cb-yellow)]"
+    >
+      <MessageCircle size={15} strokeWidth={2.2} />
+      오픈채팅
+    </Link>
   );
 }
 
@@ -752,7 +781,7 @@ function RoomBottomCta({
   return (
     <div className="sticky bottom-0 z-20 shrink-0 border-t border-[var(--cb-line)] bg-[linear-gradient(transparent,var(--cb-bg)_22%)] p-4">
       <Button asChild disabled={!room.permissions.canOpenTimeline}>
-        <Link href="/timeline">
+        <Link href={`/timeline?roomId=${room.id}`}>
           <Clock3 size={18} />
           Open Timeline
         </Link>
@@ -822,6 +851,136 @@ function ApplyModal({
           신청하기
         </Button>
       </div>
+    </Modal>
+  );
+}
+
+// CB-08 오픈채팅 정보 모달 — OPENCHAT-001(GET /api/rooms/{roomId}/open-chat)을 모달이
+// 열릴 때만 조회한다(canViewOpenChat 게이트는 호출부에서 적용). openChatPassword는 spec상
+// nullable이라 값이 없으면 비밀번호 행을 렌더하지 않는다(가짜 값 금지).
+function OpenChatModal({
+  roomId,
+  onNotice,
+}: {
+  roomId: string;
+  onNotice: (message: string) => void;
+}) {
+  const { data, isLoading, isError } = useOpenChat(roomId, true);
+
+  const copyField = useCallback(
+    async (value: string, successMessage: string) => {
+      try {
+        if (!navigator.clipboard?.writeText) {
+          onNotice("클립보드를 사용할 수 없는 환경이에요");
+          return;
+        }
+        await navigator.clipboard.writeText(value);
+        onNotice(successMessage);
+      } catch {
+        onNotice("복사에 실패했어요");
+      }
+    },
+    [onNotice],
+  );
+
+  const copyRows = data
+    ? [
+        {
+          label: "링크",
+          value: data.openChatUrl,
+          ariaLabel: "오픈채팅 링크 복사",
+          successMessage: "링크를 복사했어요",
+        },
+        ...(data.openChatPassword
+          ? [
+              {
+                label: "비밀번호",
+                value: data.openChatPassword,
+                ariaLabel: "오픈채팅 비밀번호 복사",
+                successMessage: "비밀번호를 복사했어요",
+              },
+            ]
+          : []),
+      ]
+    : [];
+
+  return (
+    <Modal
+      className="flex flex-col gap-4 p-5"
+      hideHeader
+      title="오픈채팅 정보"
+      onClose={() => undefined}
+      position="center"
+    >
+      {(closeModal) => (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] text-[var(--cb-yellow)]">
+              <MessageCircle size={20} strokeWidth={2.1} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-[16px] font-bold tracking-[-.01em]">
+                오픈채팅 정보
+              </h2>
+              <p className="mt-[3px] text-[12px] text-[var(--cb-text-3)]">
+                승인된 멤버만 볼 수 있어요
+              </p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex flex-col gap-2" aria-hidden>
+              <Skeleton className="h-[58px] w-full rounded-[var(--r-md)]" />
+              <Skeleton className="h-[58px] w-full rounded-[var(--r-md)]" />
+            </div>
+          ) : isError || !data ? (
+            <p className="rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 py-3 text-[12.5px] leading-[1.55] text-[var(--cb-text-2)]">
+              오픈채팅 정보를 불러오지 못했습니다. 승인된 멤버만 조회할 수 있어요.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {copyRows.map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-center justify-between gap-2.5 rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3.5 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[10.5px] font-bold uppercase tracking-[.06em] text-[var(--cb-text-3)]">
+                      {row.label}
+                    </div>
+                    <div className="mt-[3px] truncate text-[13.5px] font-semibold text-[var(--cb-text)] [font-family:var(--mono)]">
+                      {row.value}
+                    </div>
+                  </div>
+                  <button
+                    aria-label={row.ariaLabel}
+                    className="h-[34px] shrink-0 rounded-[var(--r-sm)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] px-3 text-[12px] font-bold text-[var(--cb-yellow-2)] transition duration-150 hover:border-[var(--cb-yellow)] hover:bg-[rgba(253,190,13,.22)] active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cb-yellow)]"
+                    type="button"
+                    onClick={() => void copyField(row.value, row.successMessage)}
+                  >
+                    복사
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] px-3 py-[11px] text-[11.5px] leading-[1.55] text-[var(--cb-text-2)]">
+            오픈채팅 정보는 외부에 공유하지 말아주세요. 승인되지 않은 사람의 입장으로 이어질 수 있어요.
+          </p>
+
+          <div className="flex gap-2.5">
+            <Button
+              className="h-[50px] text-[14px]"
+              variant="outline"
+              type="button"
+              onClick={closeModal}
+            >
+              닫기
+            </Button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
