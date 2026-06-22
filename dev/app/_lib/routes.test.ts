@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { SCREEN_ROUTES, getScreenById, resolveScreenFromSlug } from "./routes";
+import {
+  SCREEN_ROUTES,
+  getScreenById,
+  resolveScreenFromSlug,
+  safeInternalPath,
+} from "./routes";
 
 describe("screen route registry", () => {
   it("exposes every requested BuddyDuck screen exactly once", () => {
@@ -43,5 +48,24 @@ describe("screen route registry", () => {
     expect(resolveScreenFromSlug(["timetable"], { modal: "warning" })?.id).toBe("CB-11prime");
     expect(resolveScreenFromSlug(["profile", "edit"], {})?.id).toBe("CB-14prime");
     expect(getScreenById("CB-12").href).toBe("/map");
+  });
+});
+
+describe("safeInternalPath", () => {
+  it("accepts in-app absolute paths and uses the first array entry", () => {
+    expect(safeInternalPath("/rooms?concertId=1")).toBe("/rooms?concertId=1");
+    expect(safeInternalPath("/my-rooms")).toBe("/my-rooms");
+    expect(safeInternalPath(["/rooms?concertId=2", "/ignored"])).toBe(
+      "/rooms?concertId=2",
+    );
+  });
+
+  it("rejects external, protocol-relative, smuggled, and empty values", () => {
+    expect(safeInternalPath("//evil.com")).toBeNull();
+    expect(safeInternalPath("/\\evil.com")).toBeNull();
+    expect(safeInternalPath("https://evil.com")).toBeNull();
+    expect(safeInternalPath("rooms")).toBeNull();
+    expect(safeInternalPath("")).toBeNull();
+    expect(safeInternalPath(undefined)).toBeNull();
   });
 });

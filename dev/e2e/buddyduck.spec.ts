@@ -20,20 +20,14 @@ const publicRoutes = [
 const protectedRoutes = [
   ["/home", "다가오는 공연"],
   ["/rooms", "이 공연에서 내 관심 태그"],
-  ["/my-rooms", "오늘 / 이번 주"],
   ["/rooms/host", "내 역할: 방장"],
   ["/rooms/member", "참여 확정"],
   ["/rooms/pending", "승인 대기 중"],
   ["/rooms/visitor", "공개 방"],
-  ["/rooms/r1", "내 역할: 방장"],
-  ["/rooms/r2", "참여 확정"],
-  ["/rooms/r3", "승인 대기 중"],
-  ["/rooms/r4", "공개 방"],
-  ["/timeline", "MAP PREVIEW"],
+  ["/timeline", "타임라인"],
   ["/timetable", "일정 수정"],
   ["/map", "지도"],
   ["/memories", "사진 12 · 영상 3"],
-  ["/profile", "프로필"],
 ] as const;
 
 test.describe("BuddyDuck runtime UI", () => {
@@ -102,9 +96,67 @@ test.describe("BuddyDuck runtime UI", () => {
       });
     }
 
-    test("CB-02 nickname onboarding submits the profile and continues to home", async ({
+    test("CB-06 my-rooms is fully behind ROOM-004's Bearer read; an invalid session bounces to /", async ({
       page,
     }) => {
+      // ROOM-004 (GET /api/me/rooms) requires a real Bearer token and has no MSW mock,
+      // so the whole screen's content is behind the real backend. The e2e fake token is
+      // rejected (401 COMMON401) and the global http interceptor clears the cookie and
+      // redirects to /. The list therefore can't be exercised end-to-end without a real
+      // Kakao session — the same limitation documented for CB-02 and CB-04.
+      await page.goto("/my-rooms");
+      await expect(page).toHaveURL(/\/$/);
+    });
+
+    test("CB-14 profile header is behind PROFILE-001's Bearer read; an invalid session bounces to /", async ({
+      page,
+    }) => {
+      // PROFILE-001 (GET /api/users/me) requires a real Bearer token and has no MSW mock.
+      // The profile header card is driven by it, so the e2e fake token is rejected
+      // (401 COMMON401) and the global http interceptor clears the cookie and redirects
+      // to /. The rendered profile therefore can't be exercised end-to-end without a real
+      // Kakao session — the same limitation documented for CB-02, CB-04, and CB-06. The
+      // CB-14 unit test covers the header/stats/menu rendering by seeding the query.
+      await page.goto("/profile");
+      await expect(page).toHaveURL(/\/$/);
+    });
+
+    test("CB-14′ profile edit prefills from PROFILE-001; an invalid session bounces to /", async ({
+      page,
+    }) => {
+      // The edit form prefills from PROFILE-001 (GET /api/users/me, Bearer, no MSW mock)
+      // and saves via PROFILE-002 (PATCH /api/users/me/profile, also real-backend-only).
+      // With the e2e fake token the prefill read returns 401 COMMON401, so the global http
+      // interceptor clears the cookie and redirects to /. The form and its PATCH save can
+      // only be exercised with a real, profile-completed Kakao session; the CB-14prime unit
+      // test covers prefill + the PROFILE-002 PATCH body/navigation by seeding the query.
+      await page.goto("/profile/edit");
+      await expect(page).toHaveURL(/\/$/);
+    });
+
+    test("CB-07A~D room detail is behind ROOM-003's Bearer read; an invalid session bounces to /", async ({
+      page,
+    }) => {
+      // The connected /rooms/{roomId} detail (CB-07A/B/C/D) is driven by ROOM-003
+      // (GET /api/rooms/{roomId}, Bearer, no MSW mock) plus the JOIN-001~005 calls, so the
+      // whole screen is behind the real backend. The e2e fake token is rejected
+      // (401 COMMON401) and the global http interceptor clears the cookie and redirects to
+      // /. The rendered detail + approve/reject/apply flows therefore can't be exercised
+      // end-to-end without a real Kakao session — the same limitation documented for
+      // CB-02/04/06/14. The connected-screen unit test covers rendering + the role/permission
+      // branches by seeding the ["room", id] query and the JOIN envelopes.
+      await page.goto("/rooms/12345");
+      await expect(page).toHaveURL(/\/$/);
+    });
+
+    test("CB-02 nickname onboarding gates the 완료 button until all fields are valid", async ({
+      page,
+    }) => {
+      // PROFILE-002 (PATCH /api/users/me/profile) is connected to the real backend and
+      // has no MSW mock, so the actual submit requires a real authenticated session that
+      // e2e can't provide. This test therefore covers the client-side validation gating
+      // only — the part that's independent of backend auth — not the post-submit
+      // navigation to /home.
       await page.goto("/nickname");
       await page.getByPlaceholder("닉네임 입력").fill("duck");
       await expect(page.getByText("사용 가능한 닉네임")).toBeVisible();
@@ -112,27 +164,17 @@ test.describe("BuddyDuck runtime UI", () => {
       await page.getByRole("button", { name: "20대" }).click();
       await expect(page.getByRole("button", { name: "완료" })).toBeDisabled();
       await page.getByRole("button", { name: "여성" }).click();
-      await page.getByRole("button", { name: "완료" }).click();
-      await expect(page).toHaveURL(/\/home$/);
-      await expect(
-        page.getByRole("heading", { name: "공연 찾기" }),
-      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "완료" })).toBeEnabled();
     });
 
     test("home and room list render cards, chips, filter modal, and bottom nav", async ({
       page,
     }) => {
       await page.goto("/home");
-      await expect(
-        page.getByPlaceholder("공연명 / 지역 / 아티스트 검색"),
-      ).toBeVisible();
-      await expect(page.getByText("LUMINA")).toBeVisible();
+      await expect(page.getByPlaceholder("공연명 / 지역 검색")).toBeVisible();
+      const concertCards = page.locator('a[href^="/rooms?concertId="]');
+      await expect(concertCards.first()).toBeVisible();
       await expect(page.getByText("이번 주 관심 태그")).toHaveCount(0);
-      await page.getByRole("button", { name: "뮤지컬" }).click();
-      await expect(page.getByText("AFTERGLOW")).toBeVisible();
-      await expect(page.getByText("LUMINA")).toHaveCount(0);
-      await page.getByRole("button", { name: "전체" }).click();
-      await expect(page.getByText("LUMINA")).toBeVisible();
 
       const bottomNav = page.locator("nav").last();
       await expect(
@@ -148,8 +190,8 @@ test.describe("BuddyDuck runtime UI", () => {
         bottomNav.getByRole("link", { name: "동행", exact: true }),
       ).toHaveCount(0);
 
-      await page.getByRole("link", { name: /Moonlight Sync Live/ }).click();
-      await expect(page).toHaveURL(/\/rooms$/);
+      await page.locator('a[href^="/rooms?concertId="]').first().click();
+      await expect(page).toHaveURL(/\/rooms\?concertId=/);
       await expect(page.getByText("이 공연에서 내 관심 태그")).toBeVisible();
       await expect(page.getByText("설정해 둔 태그가 없습니다")).toBeVisible();
       await page.getByRole("link", { name: /편집/ }).click();
@@ -157,15 +199,14 @@ test.describe("BuddyDuck runtime UI", () => {
         page.getByRole("dialog", { name: "관심 태그 선택" }),
       ).toBeVisible();
       await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(/\/rooms$/);
+      await expect(page).toHaveURL(/\/rooms\?concertId=/);
 
-      await bottomNav
-        .getByRole("link", { name: "프로필", exact: true })
-        .click();
-      await expect(page).toHaveURL(/\/profile$/);
+      // /profile is fully behind PROFILE-001's Bearer read (see the CB-14 bounce test),
+      // so navigating there with the e2e fake token redirects to /. Assert the bottom-nav
+      // 프로필 link target instead of clicking through to an auth-gated screen.
       await expect(
         bottomNav.getByRole("link", { name: "프로필", exact: true }),
-      ).toHaveClass(/text-\[var\(--cb-yellow\)\]/);
+      ).toHaveAttribute("href", "/profile");
     });
 
     test("native scrollbars stay hidden on scrollable app surfaces", async ({
@@ -175,25 +216,8 @@ test.describe("BuddyDuck runtime UI", () => {
       await page.goto("/home");
 
       const bodyScroll = page.locator(".body-scroll").first();
-      const chipScroller = page
-        .getByRole("button", { name: "지역" })
-        .locator("..");
 
       await expect(bodyScroll).toHaveCSS("scrollbar-width", "none");
-      await expect(chipScroller).toHaveCSS("scrollbar-width", "none");
-
-      const scrollState = await chipScroller.evaluate((element) => {
-        const maxScrollLeft = element.scrollWidth - element.clientWidth;
-        element.scrollLeft = maxScrollLeft;
-
-        return {
-          maxScrollLeft,
-          scrollLeft: element.scrollLeft,
-        };
-      });
-
-      expect(scrollState.maxScrollLeft).toBeGreaterThan(0);
-      expect(scrollState.scrollLeft).toBeGreaterThan(0);
     });
 
     test("key non-profile controls show hover and focus affordances", async ({
@@ -202,14 +226,16 @@ test.describe("BuddyDuck runtime UI", () => {
       await page.setViewportSize({ width: 430, height: 932 });
       await page.goto("/home");
 
-      const musicalChip = page.getByRole("button", { name: "뮤지컬" });
-      await musicalChip.hover();
-      await expect(musicalChip).toHaveCSS(
+      const firstConcertCard = page
+        .locator('a[href^="/rooms?concertId="]')
+        .first();
+      await firstConcertCard.hover();
+      await expect(firstConcertCard).toHaveCSS(
         "background-color",
-        "rgb(39, 39, 44)",
+        "rgb(30, 30, 34)",
       );
-      await musicalChip.focus();
-      await expect(musicalChip).toHaveCSS("outline-style", "solid");
+      await firstConcertCard.focus();
+      await expect(firstConcertCard).toHaveCSS("outline-style", "solid");
 
       await page.goto("/rooms");
       const createRoomFab = page.getByRole("link", { name: "방 만들기" });
@@ -250,36 +276,47 @@ test.describe("BuddyDuck runtime UI", () => {
       expect(Math.round(scrolledBox!.y)).toBe(Math.round(initialBox!.y));
     });
 
-    test("create room validates form and routes to host detail", async ({
+    test("create room carries concertId and gates submit on required inputs", async ({
       page,
     }) => {
-      await page.goto("/rooms/create");
+      // FAB must preserve concertId into the create route (cross-screen param care).
+      await page.goto("/rooms?concertId=100");
       await expect(
-        page.getByRole("button", { name: "방 만들기" }),
-      ).toBeDisabled();
+        page.getByRole("link", { name: "방 만들기" }),
+      ).toHaveAttribute("href", /\/rooms\/create\?concertId=100/);
+
+      await page.goto("/rooms/create?concertId=100");
+      const submit = page.getByRole("button", { name: "방 만들기" });
+      await expect(submit).toBeDisabled();
+
       await page.getByRole("button", { name: "태그 추가" }).click();
       await expect(
         page.getByRole("dialog", { name: "방 태그 선택" }),
       ).toBeVisible();
-      await page.getByRole("button", { name: "굿즈 줄서기" }).click();
+      await page.getByRole("button", { name: "굿즈 구매" }).click();
       await page.getByRole("button", { name: "저장 (1/4)" }).click();
-      await expect(
-        page.getByRole("button", { name: "방 만들기" }),
-      ).toBeEnabled();
+
       await page.getByLabel("방 제목").fill("공연 전 굿즈 줄 같이 서요");
       await page
         .getByLabel("한 줄 소개")
         .fill("공연 전 굿즈 수령 후 카페에서 쉬다가 같이 입장해요.");
-      await page.getByLabel("집합 장소").fill("잠실역 5번 출구");
-      await page.getByRole("button", { name: "방 만들기" }).click();
-      await expect(page).toHaveURL(/\/rooms\/host$/);
-      await expect(page.getByText("내 역할: 방장")).toBeVisible();
+      await page.getByLabel("집합 시간").fill("2026-06-15T14:00");
+      await page
+        .getByLabel(/오픈채팅 URL/)
+        .fill("https://open.kakao.com/o/test");
+
+      // meetingPlace is chosen via the Kakao map picker (keyword search / map click).
+      await expect(page.getByLabel("집합 장소 검색")).toBeVisible();
+
+      // Without a picked meeting place the form stays disabled; the POST is Bearer-gated
+      // and cannot be exercised end-to-end without a real Kakao session (see ROOM-002).
+      await expect(submit).toBeDisabled();
     });
 
     test("room detail states and apply modal behave correctly", async ({
       page,
     }) => {
-      await page.goto("/rooms/r1");
+      await page.goto("/rooms/host");
       await expect(page.getByText("내 역할: 방장 · 멤버 2 / 4")).toBeVisible();
       await expect(
         page.getByRole("heading", { name: "승인 대기 2" }),
@@ -327,7 +364,7 @@ test.describe("BuddyDuck runtime UI", () => {
       ).toBeDisabled();
       await expect(page.getByRole("link", { name: "오픈채팅" })).toHaveCount(0);
 
-      await page.goto("/rooms/r4?modal=apply");
+      await page.goto("/rooms/visitor?modal=apply");
       const applyDialog = page.getByRole("dialog", {
         name: "입장 신청 메시지",
       });
@@ -338,7 +375,7 @@ test.describe("BuddyDuck runtime UI", () => {
         "60",
       );
       await applyDialog.getByRole("button", { name: "닫기" }).click();
-      await expect(page).toHaveURL(/\/rooms\/r4$/);
+      await expect(page).toHaveURL(/\/rooms\/visitor$/);
       await page.goto("/rooms/visitor?modal=apply");
       await expect(
         page.getByRole("dialog", { name: "입장 신청 메시지" }),
@@ -350,10 +387,26 @@ test.describe("BuddyDuck runtime UI", () => {
       await expect(page).toHaveURL(/\/rooms\/pending$/);
     });
 
+    test("dynamic room detail 뒤로가기 returns to the concert-scoped list via the back param", async ({
+      page,
+    }) => {
+      // The detail's 뒤로 target is driven by the back query param and is independent of
+      // whether the ROOM-003 fetch resolves, so this navigates deterministically without
+      // seeded backend rooms. Mirrors the CB-04 room card → detail → 뒤로 round trip.
+      const back = encodeURIComponent("/rooms?concertId=100");
+      await page.goto(`/rooms/999999?back=${back}`);
+
+      const backLink = page.getByRole("link", { name: "뒤로" });
+      await expect(backLink).toHaveAttribute("href", "/rooms?concertId=100");
+
+      await backLink.click();
+      await expect(page).toHaveURL(/\/rooms\?concertId=100$/);
+    });
+
     test("room detail uses the fixed CB-07 bottom CTA instead of the global bottom nav", async ({
       page,
     }) => {
-      await page.goto("/rooms/r2");
+      await page.goto("/rooms/member");
 
       await expect(page.locator("nav")).toHaveCount(0);
       const openTimeline = page.getByRole("link", { name: "Open Timeline" });
@@ -391,210 +444,74 @@ test.describe("BuddyDuck runtime UI", () => {
       await expect(page).toHaveURL(/\/rooms\/host$/);
     });
 
-    test("timetable edits, place add, timeline, and map share the same session data", async ({
+    test("CB-11 timetable edit shows guidance and skips the draft read without a roomId", async ({
       page,
     }) => {
+      // CB-11 now bootstraps its editable draft from SCHEDULE-001 via ?roomId=. With no
+      // roomId there is nothing to load, so the screen shows guidance instead of firing a
+      // Bearer-gated read, and the bottom nav stays hidden.
       await page.goto("/timetable");
-      await expect(page.getByText("2026.06.15 (월) — D-Day")).toBeVisible();
+      await expect(page.getByText("일정 수정").first()).toBeVisible();
+      await expect(page.getByText("방을 먼저 선택해 주세요")).toBeVisible();
       await expect(page.locator("nav")).toHaveCount(0);
-
-      for (let i = 0; i < 6; i += 1) {
-        await page
-          .getByRole("button", { name: "KSPO Dome 굿즈 라인 머무는 시간 감소" })
-          .click();
-        await page
-          .getByRole("button", { name: "잠실 카페 mood 머무는 시간 감소" })
-          .click();
-      }
-
-      await page.getByRole("link", { name: "장소 추가" }).click();
-      await expect(page).toHaveURL(/\/places$/);
-      await expect(page.locator("nav")).toHaveCount(0);
-      await page
-        .getByRole("searchbox", { name: "장소명 또는 주소 검색" })
-        .fill("토스트");
-      await page.getByRole("button", { name: "식당" }).click();
-      await page
-        .locator("[data-place-result]", { hasText: "테이크아웃 토스트 잠실점" })
-        .getByRole("button", { name: "추가" })
-        .click();
-
-      await expect(page).toHaveURL(/\/timetable$/);
-      await expect(page.getByText("테이크아웃 토스트 잠실점")).toBeVisible();
-      await page.getByRole("button", { name: "수정 완료" }).click();
-      await expect(page).toHaveURL(/\/timeline$/);
-      await expect(page.getByText("테이크아웃 토스트 잠실점")).toBeVisible();
-      await expect(page.getByText("머무는 시간 30분").first()).toBeVisible();
-
-      await page.getByRole("link", { name: "지도 CB-12", exact: true }).click();
-      await expect(page).toHaveURL(/\/map$/);
-      const toastPin = page.getByRole("button", {
-        name: "지도 핀 4: 테이크아웃 토스트 잠실점",
-      });
-      await expect(toastPin).toBeVisible();
-      await toastPin.click();
-      await expect(page.getByText("테이크아웃 토스트 잠실점")).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "내 방으로 가기" }),
+      ).toHaveAttribute("href", "/my-rooms");
     });
 
-    test("timetable grip drag reorders place blocks before completing edits", async ({
+    test("CB-11 timetable edit is behind SCHEDULE-001's Bearer read; an invalid session bounces to /", async ({
       page,
     }) => {
-      await page.goto("/timetable");
-      await page
-        .getByRole("button", { name: "잠실역 5번 출구 순서 이동" })
-        .dragTo(page.locator("[data-timetable-stop='s3']"), {
-          targetPosition: { x: 160, y: 88 },
-        });
-
-      await expect(page.locator("[data-timetable-stop]").nth(0)).toContainText(
-        "KSPO Dome 굿즈 라인",
-      );
-      await expect(page.locator("[data-timetable-stop]").nth(1)).toContainText(
-        "잠실 카페 mood",
-      );
-      await expect(page.locator("[data-timetable-stop]").nth(2)).toContainText(
-        "잠실역 5번 출구",
-      );
-      await expect(page.locator("[data-timetable-stop]").last()).toContainText(
-        "공연 시작",
-      );
-
-      await page.getByRole("button", { name: "수정 완료" }).click();
-      await expect(page).toHaveURL(/\/timeline$/);
-      await expect(
-        page.getByRole("button", { name: /일정 1.*KSPO Dome 굿즈 라인/ }),
-      ).toBeVisible();
+      // With a roomId, CB-11 reads SCHEDULE-001 (GET /api/rooms/{roomId}/timeline) to seed
+      // the editable draft and the scheduleId used by SCHEDULE-002/003/004. That read is
+      // Bearer-gated with no MSW mock, so the e2e fake token is rejected (401 COMMON401)
+      // and the global http interceptor clears the cookie and redirects to /. The draft
+      // recalculate / recommend / commit (incl. the 409 → CB-11′ over-time warning) flow
+      // therefore can't be exercised end-to-end without a real Kakao session — the same
+      // limitation documented for CB-04/06/07/09; it is covered by the CB-11 unit tests.
+      await page.goto("/timetable?roomId=10");
+      await expect(page).toHaveURL(/\/$/);
     });
 
-    test("over-time save is blocked and refresh resets the mock timetable", async ({
+    test("CB-09 timeline is behind SCHEDULE-001's Bearer read; an invalid session bounces to /", async ({
       page,
     }) => {
-      await page.goto("/timetable");
-      await page.getByRole("link", { name: "장소 추가" }).click();
-      await page
-        .getByRole("searchbox", { name: "장소명 또는 주소 검색" })
-        .fill("포카샵");
-      await page.getByRole("button", { name: "굿즈" }).click();
-      await page
-        .locator("[data-place-result]", { hasText: "롯데월드몰 포카샵" })
-        .getByRole("button", { name: "추가" })
-        .click();
-
-      await expect(page).toHaveURL(/\/timetable$/);
-      await expect(page.getByText("롯데월드몰 포카샵")).toBeVisible();
-      await page.getByRole("button", { name: "수정 완료" }).click();
-      await expect(page).toHaveURL(/\/timetable\?modal=warning$/);
-      const warningDialog = page.getByRole("dialog", {
-        name: "지금 일정을 전부 소화할 수 없습니다",
-      });
-      await expect(warningDialog).toBeVisible();
-      await expect(warningDialog).toBeInViewport();
-      await expect(page.getByText("초과 시간")).toBeVisible();
-      await page.getByRole("button", { name: "되돌아가서 수정" }).click();
-      await expect(page).toHaveURL(/\/timetable$/);
-      await expect(page.getByText("롯데월드몰 포카샵")).toBeVisible();
-
-      await page.reload();
-
-      await expect(page.getByText("롯데월드몰 포카샵")).toHaveCount(0);
-      await expect(page.getByText("잠실역 5번 출구 (집합)")).toBeVisible();
+      // CB-09 /timeline is now driven by SCHEDULE-001 (GET /api/rooms/{roomId}/timeline),
+      // a Bearer-gated read with no MSW mock. With a real roomId the e2e fake token is
+      // rejected (401 COMMON401) and the global http interceptor clears the cookie and
+      // redirects to /. The schedule list therefore can't be exercised end-to-end without
+      // a real Kakao session — the same limitation documented for CB-04/CB-06/CB-07. The
+      // CB-09 unit test covers the rendering (forced-locked first/last slots, route
+      // segments, warnings) by mocking the SCHEDULE-001 envelope. The CB-12 map-focus
+      // behavior that used to ride along in this test is covered by the CB-12 unit test.
+      await page.goto("/timeline?roomId=10");
+      await expect(page).toHaveURL(/\/$/);
     });
 
-    test("timeline map preview and schedule cards stay synchronized", async ({
+    test("CB-12 map shows guidance and skips the map read without a roomId", async ({
       page,
     }) => {
-      await page.goto("/timeline");
-      await expect(page.getByText("MAP PREVIEW")).toBeVisible();
-      await expect(page.getByText(/Kakao Maps fallback/)).toBeVisible();
-      await expect(page.getByRole("link", { name: /추억/ })).toHaveCount(0);
-      await expect(page.locator("polyline")).toHaveAttribute(
-        "points",
-        "22,64 40,52 55,60 62,42",
-      );
-
-      const pin3 = page.getByRole("button", {
-        name: "지도 핀 3: 잠실 카페 mood",
-      });
-      const card3 = page.getByRole("button", {
-        name: /일정 3.*잠실 카페 mood/,
-      });
-
-      await pin3.click();
-      await expect(card3).toBeInViewport();
-      await expect(pin3).toHaveAttribute("aria-current", "true");
-      await expect(card3).toHaveAttribute("data-selected", "true");
-
-      const pin2 = page.getByRole("button", {
-        name: "지도 핀 2: KSPO Dome 굿즈 라인",
-      });
-      const card2 = page.getByRole("button", {
-        name: /일정 2.*KSPO Dome 굿즈 라인/,
-      });
-      await card2.hover();
-      await expect(pin2).toHaveAttribute("data-active", "true");
-      await card2.focus();
-      await expect(pin2).toHaveAttribute("data-active", "true");
-
-      await page.getByRole("button", { name: "D+1 일정 보기" }).click();
-      await expect(
-        page.getByRole("button", { name: "D+1 일정 보기" }),
-      ).toHaveAttribute("aria-pressed", "true");
-      await expect(page.getByText("잠실 숙소 체크아웃")).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "지도 핀 1: 잠실 숙소 체크아웃" }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "지도 핀 1: 잠실역 5번 출구" }),
-      ).toHaveCount(0);
-      await expect(page.locator("polyline")).toHaveAttribute(
-        "points",
-        "28,48 50,44 68,60",
-      );
-
-      await page.getByRole("button", { name: "D-Day 일정 보기" }).click();
-      await page.getByRole("link", { name: "지도 열기" }).click();
-      await expect(page).toHaveURL(/\/map$/);
-      await expect(page.locator("[data-map-focus-layer]")).toHaveAttribute(
-        "data-centered-stop",
-        "s1",
-      );
-      await page.getByRole("button", { name: "다음 동선으로 이동" }).click();
-      await expect(page.getByText("KSPO Dome 굿즈 라인")).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "지도 핀 2: KSPO Dome 굿즈 라인" }),
-      ).toHaveAttribute("aria-current", "true");
-      await expect(page.locator("[data-map-focus-layer]")).toHaveAttribute(
-        "data-centered-stop",
-        "s2",
-      );
-    });
-
-    test("map fallback and profile edit render required states", async ({
-      page,
-    }) => {
+      // CB-12 /map is now driven by MAP-001 (GET /api/rooms/{roomId}/map) via ?roomId=.
+      // With no roomId there is nothing to load, so the screen shows guidance instead of
+      // firing the Bearer-gated read.
       await page.goto("/map");
-      await expect(page.getByText(/Kakao Maps fallback/)).toBeVisible();
+      await expect(page.getByText("지도").first()).toBeVisible();
+      await expect(page.getByText("방을 먼저 선택해 주세요")).toBeVisible();
       await expect(
-        page.getByText(
-          /NEXT_PUBLIC_KAKAO_MAP_KEY 미설정|스크립트 로딩 중 또는 실패/,
-        ),
-      ).toBeVisible();
+        page.getByRole("link", { name: "내 방으로 가기" }),
+      ).toHaveAttribute("href", "/my-rooms");
+    });
 
-      await page.goto("/profile");
-      await expect(
-        page.getByRole("link", { name: /moon_armies/ }),
-      ).toHaveAttribute("href", "/profile/edit");
-      await expect(page.getByText("추억 사진")).toHaveCount(0);
-      await page.getByRole("button", { name: /알림 설정/ }).click();
-      await expect(page.getByRole("status")).toContainText(
-        "개발중인 기능입니다",
-      );
-      await page.getByRole("link", { name: /moon_armies/ }).click();
-      await expect(page).toHaveURL(/\/profile\/edit$/);
-      await page.getByLabel("닉네임").fill("newduck");
-      await page.getByRole("button", { name: "30대" }).click();
-      await page.getByRole("link", { name: "저장" }).click();
-      await expect(page).toHaveURL(/\/profile$/);
+    test("CB-12 map is behind MAP-001's Bearer read; an invalid session bounces to /", async ({
+      page,
+    }) => {
+      // With a roomId, CB-12 reads MAP-001 (GET /api/rooms/{roomId}/map) for the pins /
+      // route / bounds. That read is Bearer-gated with no MSW mock, so the e2e fake token
+      // is rejected (401 COMMON401) and the global http interceptor clears the cookie and
+      // redirects to /. Pin/route rendering is covered by the CB-12 unit tests mocking the
+      // MAP-001 envelope — the same limitation documented for CB-04/06/07/09/11.
+      await page.goto("/map?roomId=10");
+      await expect(page).toHaveURL(/\/$/);
     });
 
     test("CB-03 through CB-12 follows the Hi-Fi page flow for an already-authenticated session", async ({
@@ -602,11 +519,15 @@ test.describe("BuddyDuck runtime UI", () => {
     }) => {
       await page.goto("/home");
 
-      await page.getByRole("link", { name: /Moonlight Sync Live/ }).click();
-      await expect(page).toHaveURL(/\/rooms$/);
+      await page.locator('a[href^="/rooms?concertId="]').first().click();
+      await expect(page).toHaveURL(/\/rooms\?concertId=/);
+      await expect(page.getByText("이 공연에서 내 관심 태그")).toBeVisible();
 
-      await page.getByRole("link", { name: /첫콘이라 동선/ }).click();
-      await expect(page).toHaveURL(/\/rooms\/r4$/);
+      // CB-04 room cards now come from the live ROOM-001 endpoint; the per-id room detail
+      // (CB-07, /rooms/{id}) is Bearer-gated and bounces without a real session, so this
+      // UI-only flow continues from the static /rooms/visitor wireframe demo route.
+      await page.goto("/rooms/visitor");
+      await expect(page).toHaveURL(/\/rooms\/visitor$/);
       await page.getByRole("link", { name: "입장 신청" }).click();
       await expect(
         page.getByRole("dialog", { name: "입장 신청 메시지" }),
@@ -628,36 +549,19 @@ test.describe("BuddyDuck runtime UI", () => {
 
       await page.getByRole("link", { name: "Open Timeline" }).click();
       await expect(page).toHaveURL(/\/timeline$/);
+      // CB-09 timeline and CB-11 timetable are now Bearer/roomId-gated (SCHEDULE-001).
+      // Reached from the static wireframe detail without a roomId, both show their guidance
+      // empty state instead of the old store-seeded fixtures; the live schedule list / draft
+      // edit (recalculate/recommend/commit + 409→CB-11′) flow needs a real session and is
+      // covered by the CB-09/CB-11 unit + bounce tests. CB-12 /map keeps its own smoke +
+      // unit test (it still reads the Zustand store).
+      await expect(page.getByText("방을 먼저 선택해 주세요")).toBeVisible();
       await page.getByRole("link", { name: /수정/ }).click();
       await expect(page).toHaveURL(/\/timetable$/);
-      for (let i = 0; i < 6; i += 1) {
-        await page
-          .getByRole("button", { name: "KSPO Dome 굿즈 라인 머무는 시간 감소" })
-          .click();
-        await page
-          .getByRole("button", { name: "잠실 카페 mood 머무는 시간 감소" })
-          .click();
-      }
-      await page.getByRole("link", { name: "장소 추가" }).click();
-      await expect(page).toHaveURL(/\/places$/);
-      await page
-        .getByRole("searchbox", { name: "장소명 또는 주소 검색" })
-        .fill("토스트");
-      await page
-        .locator("[data-place-result]", { hasText: "테이크아웃 토스트 잠실점" })
-        .getByRole("button", { name: "추가" })
-        .click();
-      await expect(page).toHaveURL(/\/timetable$/);
-      await expect(page.getByText("테이크아웃 토스트 잠실점")).toBeVisible();
-      await page.getByRole("button", { name: "수정 완료" }).click();
-      await expect(page).toHaveURL(/\/timeline$/);
-      await expect(page.getByText("테이크아웃 토스트 잠실점")).toBeVisible();
-      await page.getByRole("link", { name: "지도 CB-12", exact: true }).click();
-      await expect(page).toHaveURL(/\/map$/);
-      await page
-        .getByRole("button", { name: "지도 핀 4: 테이크아웃 토스트 잠실점" })
-        .click();
-      await expect(page.getByText("테이크아웃 토스트 잠실점")).toBeVisible();
+      await expect(page.getByText("방을 먼저 선택해 주세요")).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "내 방으로 가기" }),
+      ).toHaveAttribute("href", "/my-rooms");
     });
   });
 });

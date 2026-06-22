@@ -1,29 +1,7 @@
 import { http, HttpResponse } from "msw";
-import { concerts, myProfile, rooms } from "@/lib/data";
+import { myProfile } from "@/lib/data";
 
 export const handlers = [
-  http.get("*/api/concerts", () => HttpResponse.json(concerts)),
-  http.get("*/api/rooms", ({ request }) => {
-    const tag = new URL(request.url).searchParams.get("tag");
-    const filteredRooms = tag
-      ? rooms.filter((room) => room.tags.includes(tag))
-      : rooms;
-
-    return HttpResponse.json(filteredRooms);
-  }),
-  http.post("*/api/rooms", async ({ request }) => {
-    const body = (await request.json()) as { title?: string; tags?: string[] };
-
-    return HttpResponse.json(
-      {
-        ...rooms[0],
-        id: `draft-${Date.now()}`,
-        title: body.title ?? rooms[0].title,
-        tags: body.tags ?? rooms[0].tags,
-      },
-      { status: 201 },
-    );
-  }),
   http.post("*/api/rooms/:id/apply", ({ params }) =>
     HttpResponse.json({
       ok: true,
@@ -40,14 +18,11 @@ export const handlers = [
       ...body,
     });
   }),
-  http.patch("*/api/users/me/profile", async ({ request }) => {
-    const body = await request.json();
-
-    return HttpResponse.json({
-      isSuccess: true,
-      code: "COMMON200",
-      message: "요청에 성공했습니다.",
-      result: body,
-    });
-  }),
+  // NOTE: PATCH /api/users/me/profile (PROFILE-002, CB-02 프로필 완료) is intentionally
+  // NOT mocked. It is connected to the real backend via src/lib/auth/profile.ts. A mock
+  // here would shadow the real call in dev/e2e and fake profileCompleted=true without
+  // persisting it, leaving the backend at profileCompleted=false — so any protected API
+  // (e.g. GET /api/concerts/{id}/rooms) keeps returning 403 AUTH_REQUIRED_PROFILE_INFO
+  // and bounces the user back to /nickname in an infinite loop. The profile-completion
+  // call must always hit NEXT_PUBLIC_API_BASE_URL.
 ];

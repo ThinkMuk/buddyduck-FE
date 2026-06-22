@@ -1,11 +1,20 @@
 import { ScreenShell } from "../_components/screen-shell";
-import { getScreenById } from "../_lib/routes";
+import { firstParam, getScreenById, type SearchParams } from "../_lib/routes";
 import { MapScreen } from "./_components/map-screen";
 
-export default function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const query = await searchParams;
+  const roomIdParam = firstParam(query.roomId);
+  const parsedRoomId = roomIdParam ? Number(roomIdParam) : NaN;
+  const roomId = Number.isFinite(parsedRoomId) ? parsedRoomId : null;
+
   return (
     <ScreenShell screen={getScreenById("CB-12")}>
-      <MapScreen />
+      <MapScreen roomId={roomId} />
     </ScreenShell>
   );
 }

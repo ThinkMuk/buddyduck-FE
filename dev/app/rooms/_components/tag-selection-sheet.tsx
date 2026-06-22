@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { Chip } from "@/components/ui";
-import { tagCategories } from "@/lib/data";
+import { ROOM_TAGS, getRoomTagLabel } from "@/lib/api/rooms";
 import { cn } from "@/lib/utils";
 
 export function TagSelectionSheet({
@@ -12,7 +12,7 @@ export function TagSelectionSheet({
   maxTags,
   onToggle,
   onDismiss,
-  actions
+  actions,
 }: {
   title: string;
   description: string;
@@ -52,38 +52,35 @@ export function TagSelectionSheet({
           </div>
           <div className="min-w-0">
             <h2 className="text-[16px] font-bold leading-tight">{title}</h2>
-            <p className="mt-1 text-[11.5px] leading-5 text-[var(--cb-text-3)]">{description}</p>
+            <p className="mt-1 text-[11.5px] leading-5 text-[var(--cb-text-3)]">
+              {description}
+            </p>
           </div>
         </div>
-        <div className="flex flex-col gap-3.5">
-          {tagCategories.map((category) => (
-            <div key={category.title}>
-              <div className="mb-2 text-[10.5px] font-bold uppercase tracking-[.1em] text-[var(--cb-text-3)]">{category.title}</div>
-              <div className="flex flex-wrap gap-2">
-                {category.tags.map((tag) => {
-                  const active = selectedTags.includes(tag);
-                  const disabled = !active && isAtLimit;
+        <div className="flex flex-wrap gap-2">
+          {ROOM_TAGS.map((tag) => {
+            const active = selectedTags.includes(tag);
+            const disabled = !active && isAtLimit;
 
-                  return (
-                    <Chip
-                      active={active}
-                      aria-pressed={active}
-                      className={cn(disabled && "opacity-45")}
-                      disabled={disabled}
-                      key={tag}
-                      onClick={() => onToggle(tag)}
-                      type="button"
-                    >
-                      {tag}
-                    </Chip>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            return (
+              <Chip
+                active={active}
+                aria-pressed={active}
+                className={cn(disabled && "opacity-45")}
+                disabled={disabled}
+                key={tag}
+                onClick={() => onToggle(tag)}
+                type="button"
+              >
+                {getRoomTagLabel(tag)}
+              </Chip>
+            );
+          })}
         </div>
         <div className="mt-4 rounded-[var(--r-md)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] p-3 text-[11.5px] leading-5 text-[var(--cb-yellow-2)]">
-          선택한 태그로 <b className="font-bold text-[var(--cb-yellow)]">방 카드 매칭 수</b>가 결정돼요. 사용자 정의 태그는 지원하지 않아요.
+          선택한 태그로{" "}
+          <b className="font-bold text-[var(--cb-yellow)]">방 카드 매칭 수</b>가
+          결정돼요. 사용자 정의 태그는 지원하지 않아요.
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2">{actions}</div>
       </section>

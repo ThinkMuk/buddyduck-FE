@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/lib/auth/auth-store";
+import { markMswReady } from "@/mocks/ready";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -17,7 +18,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       typeof window !== "undefined"
     ) {
       import("@/mocks/browser").then(({ worker }) => {
-        worker.start({ onUnhandledRequest: "bypass" }).catch(() => undefined);
+        worker
+          .start({ onUnhandledRequest: "bypass" })
+          .catch(() => undefined)
+          .finally(markMswReady);
       });
     }
   }, []);

@@ -2,18 +2,18 @@
 
 import Link from "next/link";
 import { MapPin } from "lucide-react";
+import { differenceInCalendarDays, format } from "date-fns";
+import { ko } from "date-fns/locale/ko";
 import { useMemo, useState } from "react";
-import { AppBar, Button, Card } from "@/components/ui";
+import { AppBar, Button, Card, Skeleton } from "@/components/ui";
+import { formatRoomMeetingTime } from "@/lib/format";
+import { useMyRooms, type MyRoomItem } from "@/lib/api/my-rooms";
 import { cn } from "@/lib/utils";
-import {
-  getActiveMyRoomCards,
-  getPastMyRoomCards,
-  myRoomFooterText,
-  myRoomRoleLabel,
-  type MyRoomCardModel,
-  type MyRoomCardStatus,
-  type MyRoomFilter
-} from "../../_lib/my-room-cards";
+
+// Client-side grouping derived from ROOM-004's viewerRole/viewerJoinStatus.
+// The endpoint does not return a status/tab field per item, so these chips are computed
+// locally rather than via the (optional, undocumented-enum) `tab` query param.
+type MyRoomGroup = "host" | "member" | "pending" | "other";
 
 const myRoomFilters = [
   { key: "all", label: "전체" },
@@ -22,23 +22,60 @@ const myRoomFilters = [
   { key: "pending", label: "대기중" }
 ] as const;
 
+type MyRoomFilter = (typeof myRoomFilters)[number]["key"];
+
+function deriveGroup(item: MyRoomItem): MyRoomGroup {
+  if (item.viewerJoinStatus === "PENDING") return "pending";
+  if (item.viewerRole === "HOST") return "host";
+  if (item.viewerRole === "MEMBER") return "member";
+  return "other";
+}
+
+function groupLabel(group: MyRoomGroup) {
+  return { host: "HOST", member: "참여중", pending: "대기중", other: "참여" }[group];
+}
+
+// roomId-based navigation to the backend-driven room detail (CB-07A/B/C/D via ROOM-003).
+// The detail screen reads viewerRole/permissions from the API, so a single per-id route
+// serves every role — no need to pre-select a role-specific placeholder route here.
+function detailHref(item: MyRoomItem) {
+  return `/rooms/${item.roomId}?back=${encodeURIComponent("/my-rooms")}`;
+}
+
+function formatConcertDayLabel(startAt: string) {
+  return format(new Date(startAt), "MM.dd (eee)", { locale: ko });
+}
+
+function getConcertDday(item: MyRoomItem): { label: string; ended: boolean } {
+  // Use the actual concert date as the source of truth for past/ended, so a stale or
+  // server-clamped daysUntilConcert can't keep a finished concert stuck on "D-DAY".
+  const daysFromDate = differenceInCalendarDays(
+    new Date(item.concertStartAt),
+    new Date()
+  );
+  if (daysFromDate < 0) return { label: "종료", ended: true };
+  if (daysFromDate === 0) return { label: "D-DAY", ended: false };
+  return { label: `D-${item.daysUntilConcert}`, ended: false };
+}
+
 export function MyRoomsScreen() {
   const [filter, setFilter] = useState<MyRoomFilter>("all");
-  const activeRooms = useMemo(() => getActiveMyRoomCards(), []);
-  const counts = {
-    host: activeRooms.filter((room) => room.status === "host").length,
-    member: activeRooms.filter((room) => room.status === "member").length,
-    pending: activeRooms.filter((room) => room.status === "pending").length
-  };
-  const currentRooms = activeRooms.filter((room) => {
+  const { data, isLoading, isError } = useMyRooms();
+
+  const items = useMemo(() => data?.items ?? [], [data]);
+  const counts = useMemo(
+    () => ({
+      host: items.filter((item) => deriveGroup(item) === "host").length,
+      member: items.filter((item) => deriveGroup(item) === "member").length,
+      pending: items.filter((item) => deriveGroup(item) === "pending").length
+    }),
+    [items]
+  );
+
+  const visibleItems = items.filter((item) => {
     if (filter === "all") return true;
-    return room.status === filter;
+    return deriveGroup(item) === filter;
   });
-  const pastRooms = filter === "all" ? getPastMyRoomCards() : [];
-  const sections = [
-    { id: "current", title: "오늘 / 이번 주", rooms: currentRooms },
-    { id: "past", title: "지난 방", rooms: pastRooms }
-  ].filter((section) => section.rooms.length > 0);
 
   return (
     <>
@@ -80,26 +117,28 @@ export function MyRoomsScreen() {
             );
           })}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-[88px] pt-0">
-          {sections.length > 0 ? (
-            sections.map((section) => (
-              <section aria-labelledby={`my-rooms-${section.id}`} key={section.id}>
-                <h2
-                  className="mx-4 mb-2.5 mt-[18px] text-[10.5px] font-bold uppercase tracking-[.1em] text-[var(--cb-text-3)]"
-                  id={`my-rooms-${section.id}`}
-                >
-                  {section.title}
-                </h2>
-                {section.rooms.map((room) => (
-                  <MyRoomCard key={room.id} room={room} />
-                ))}
-              </section>
-            ))
+        <div className="min-h-0 flex-1 overflow-y-auto pb-[88px] pt-[18px]">
+          {isLoading ? (
+            <div className="flex flex-col gap-3 px-4" aria-hidden>
+              {[0, 1, 2].map((key) => (
+                <Skeleton key={key} className="h-[112px] w-full rounded-[var(--r-lg)]" />
+              ))}
+            </div>
+          ) : isError ? (
+            <Card className="mx-4 p-5 text-center">
+              <p className="text-[13px] text-[var(--cb-text-2)]">방 목록을 불러오지 못했습니다.</p>
+            </Card>
+          ) : visibleItems.length > 0 ? (
+            <section aria-label="내 방 목록">
+              {visibleItems.map((item) => (
+                <MyRoomCard key={item.roomId} item={item} />
+              ))}
+            </section>
           ) : (
-            <Card className="mx-4 mt-[18px] p-5 text-center">
+            <Card className="mx-4 p-5 text-center">
               <p className="text-[13px] text-[var(--cb-text-2)]">아직 표시할 방이 없습니다.</p>
               <Button asChild className="mt-4">
-                <Link href="/rooms/create">방 만들기</Link>
+                <Link href="/home">방 만들기</Link>
               </Button>
             </Card>
           )}
@@ -109,79 +148,84 @@ export function MyRoomsScreen() {
   );
 }
 
-function MyRoomCard({ room }: { room: MyRoomCardModel }) {
-  const isPendingOrPast = room.status === "pending" || room.status === "past";
-  const cardClassName = cn(
-    "relative mx-4 mb-3 flex gap-3 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-3 shadow-[var(--sh-card)] transition duration-150 hover:border-[var(--cb-line-2)] hover:bg-[var(--cb-surface-2)] active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cb-yellow)]",
-    room.status === "past" && "opacity-[.62]"
-  );
+function MyRoomCard({ item }: { item: MyRoomItem }) {
+  const group = deriveGroup(item);
+  const isPending = group === "pending";
+  const showPendingBadge = group === "host" && item.pendingJoinRequestCount > 0;
+  const dday = getConcertDday(item);
+  const dimmed = isPending || dday.ended;
 
-  const content = (
-    <>
+  return (
+    <Link
+      href={detailHref(item)}
+      className={cn(
+        "relative mx-4 mb-3 flex gap-3.5 rounded-[var(--r-lg)] border border-[var(--cb-line)] bg-[var(--cb-surface-1)] p-3.5 shadow-[var(--sh-card)] transition duration-150 hover:border-[var(--cb-line-2)] hover:bg-[var(--cb-surface-2)] active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cb-yellow)]",
+        dimmed && "opacity-[.72]"
+      )}
+    >
       <div className="ph h-[60px] w-[60px] rounded-[var(--r-md)]">
         <span className="absolute bottom-2 left-[9px] font-mono text-[9px] font-semibold leading-none tracking-[.06em] text-white/35">
           ROOM
         </span>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+      <div className="flex min-w-0 flex-1 flex-col gap-[6px]">
         <div
           className={cn(
-            "truncate pr-[42px] text-[14px] font-bold tracking-[-.01em]",
-            isPendingOrPast && "text-[var(--cb-text-2)]"
+            "truncate pr-[46px] text-[14px] font-bold tracking-[-.01em]",
+            isPending && "text-[var(--cb-text-2)]"
           )}
         >
-          {room.title}
+          {item.title}
         </div>
-        <div className="text-[11.5px] text-[var(--cb-text-3)]">
-          {room.concertTitle} · {room.dateLabel}
+        <div className="truncate text-[11.5px] text-[var(--cb-text-3)]">
+          {item.concertTitle} · {formatConcertDayLabel(item.concertStartAt)}
         </div>
-        <div className="mt-[5px] flex items-center gap-1.5 text-[12px] text-[var(--cb-text-2)]">
+        <div className="flex items-center gap-1.5 text-[12px] text-[var(--cb-text-2)]">
           <MapPin size={13} className="shrink-0 text-[var(--cb-text-3)]" />
-          <span className="min-w-0 truncate">{room.meetPlace}</span>
-          <span className="shrink-0 text-[var(--cb-text-3)]">·</span>
-          <span className="shrink-0">{room.meetTime}</span>
+          <span className="min-w-0 truncate">{item.venueName}</span>
         </div>
-        <div className="mt-[7px] flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[12px] text-[var(--cb-text-2)]">
+          <span className="shrink-0 rounded-[var(--r-sm)] border border-[var(--cb-line)] px-1.5 py-px text-[10px] font-semibold text-[var(--cb-text-3)]">
+            집합
+          </span>
+          <span className="min-w-0 truncate">{item.meetingPlaceName}</span>
+          <span className="shrink-0 text-[var(--cb-text-3)]">·</span>
+          <span className="shrink-0">{formatRoomMeetingTime(item.meetingAt)}</span>
+        </div>
+        <div className="mt-[2px] flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 text-[11.5px] text-[var(--cb-text-3)]">
-            <span className={myRoomRoleBadgeClass(room.status)}>{myRoomRoleLabel(room.status)}</span>
-            <span className="truncate">{myRoomFooterText(room)}</span>
+            <span className={myRoomRoleBadgeClass(group)}>{groupLabel(group)}</span>
+            <span className="truncate">
+              {isPending ? "승인 대기 중" : `멤버 ${item.memberCount} / ${item.maxMembers}`}
+            </span>
           </div>
-          {room.pendingCount ? (
+          {showPendingBadge ? (
             <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--cb-yellow)] px-[9px] py-[3px] text-[10.5px] font-extrabold text-[var(--cb-on-yellow)]">
-              승인 대기 {room.pendingCount}건
+              승인 대기 {item.pendingJoinRequestCount}건
             </span>
           ) : null}
         </div>
       </div>
-      {room.countdown ? (
-        <div className="absolute right-3 top-3 rounded-[var(--r-sm)] border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] px-2 py-[3px] text-[11px] font-extrabold text-[var(--cb-yellow)]">
-          {room.countdown}
-        </div>
-      ) : null}
-    </>
-  );
-
-  if (!room.href) {
-    return (
-      <div className={cardClassName} aria-label={room.title}>
-        {content}
+      <div
+        className={cn(
+          "absolute right-3 top-3 rounded-[var(--r-sm)] border px-2 py-[3px] text-[11px] font-extrabold",
+          dday.ended
+            ? "border-[var(--cb-line)] bg-[var(--cb-surface-2)] text-[var(--cb-text-3)]"
+            : "border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] text-[var(--cb-yellow)]"
+        )}
+      >
+        {dday.label}
       </div>
-    );
-  }
-
-  return (
-    <Link href={room.href} className={cardClassName}>
-      {content}
     </Link>
   );
 }
 
-function myRoomRoleBadgeClass(status: MyRoomCardStatus) {
+function myRoomRoleBadgeClass(group: MyRoomGroup) {
   return cn(
     "shrink-0 rounded-[var(--r-sm)] px-2 py-[3px] text-[10px] font-extrabold uppercase tracking-[.04em]",
-    status === "host" && "bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]",
-    status === "member" && "border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] text-[var(--cb-yellow-2)]",
-    status === "pending" && "border border-[var(--cb-line-2)] text-[var(--cb-text-2)]",
-    status === "past" && "border border-[var(--cb-line)] text-[var(--cb-text-3)]"
+    group === "host" && "bg-[var(--cb-yellow)] text-[var(--cb-on-yellow)]",
+    group === "member" && "border border-[var(--cb-yellow-line)] bg-[var(--cb-yellow-dim)] text-[var(--cb-yellow-2)]",
+    group === "pending" && "border border-[var(--cb-line-2)] text-[var(--cb-text-2)]",
+    group === "other" && "border border-[var(--cb-line)] text-[var(--cb-text-3)]"
   );
 }
