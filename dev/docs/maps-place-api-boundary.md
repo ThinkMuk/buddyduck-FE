@@ -49,10 +49,30 @@
   최종 선택된 `RoomPlace`만 `POST /api/rooms`(ROOM-002) 바디에 실어 보낸다.
 - **CB-09 (Timeline, `/timeline`)** — 맵 프리뷰의 핀/경로는 **방의 저장된 일정**이다.
   → **데이터는 MAP-001로 받아오고, 렌더링만 SDK로** 한다. ("SDK 대신 MAP-001"이 아니라 **둘 다** 필요.)
+  > 실제 연결됨(2026-06 기준): 타임라인 **일정 리스트**는 SCHEDULE-001
+  > (`GET /api/rooms/{roomId}/timeline`)로, **맵 프리뷰 핀/경로**는 MAP-001
+  > (`GET /api/rooms/{roomId}/map`)로 받아오고 렌더링은 Kakao SDK(`RouteMapCanvas`)로 한다
+  > — 둘 다 `src/lib/api/timeline.ts`. SCHEDULE-001 응답엔 좌표가 없어 핀 좌표는 MAP-001의
+  > 슬롯 lat/lng + mapBounds로 그린다. MAP-001 명세상 사용 화면은 CB-12지만 이 경계 문서 기준에
+  > 따라 CB-09도 동일 맵 데이터를 사용한다. (주의: MAP-001 슬롯의 좌표 필드는 명세 미정의라
+  > 추론값이며 실제 세션에서 런타임 확인 필요.)
 - **CB-10 (Place Search, `/places`)** — 검색 결과가 방 일정으로 **영속화**되어야 한다.
   → **PLACE-001(검색) + PLACE-003(upsert)** 사용. 지도 미리보기가 있다면 렌더링은 SDK.
+  > 실제 연결됨(2026-06 기준): 키워드 검색은 PLACE-001(`GET /api/places/search`), 주소→좌표는
+  > PLACE-002(`GET /api/places/geocode`), 선택 결과 upsert는 PLACE-003(`POST /api/places`)로
+  > 연결됨 — 전부 `src/lib/api/places.ts`, Bearer-gated, MSW mock 없음. CB-11 "장소 추가"에서
+  > `/places?roomId=`로 진입하고, upsert 후 선택 장소를 sessionStorage(`cb11:pendingPlace:{roomId}`)에
+  > 적어두고 깨끗한 `/timetable?roomId=`로 돌아간다. CB-11은 부트스트랩 시 이를 읽어 draft에 슬롯을
+  > 삽입하고 SCHEDULE-002로 재계산한다(편집 중 draft는 `cb11:draft:{scheduleId}`로 라운드트립 동안
+  > 보존). URL 파라미터 대신 sessionStorage를 쓰는 이유: `?addPlaceId=` 같은 파라미터를 `router.replace`로
+  > 떼어내면 async 페이지가 재렌더·재마운트되어 삽입한 draft가 서버 draft로 덮여 사라지기 때문.
+  > 지도 미리보기는 아직 없음. 구 fixture(`places`)+Zustand 흐름은 제거됨.
 - **CB-11 / CB-11′ (Timetable Edit, `/timetable`)** — 일정 장소를 다루므로 CB-10과 동일하게
   PLACE-001/002/003을 사용. 표시는 SDK.
+  > 실제 연결됨(2026-06 기준): 일정 편집/저장은 SCHEDULE-002(recalculate)·SCHEDULE-004(recommend)·
+  > SCHEDULE-003(commit)로 연결됨(`src/lib/api/schedule-draft.ts`). 편집할 draft와 scheduleId는
+  > SCHEDULE-001(`?roomId=`)로 부트스트랩한다. **PLACE-001/002/003(화면 내 장소 검색/지오코딩/upsert)은
+  > CB-10로 연기**되어 아직 미연결 — 장소 추가 버튼은 그대로 `/places`(CB-10, store 기반)로 링크한다.
 - **CB-12 (Map View, `/map`)** — 방의 핀/경로를 보여주는 화면.
   → **데이터는 MAP-001, 렌더링은 SDK.**
 
