@@ -100,15 +100,7 @@ export function ProfileScreen() {
         </ProfileMenuGroup>
 
         <ProfileMenuGroup title="계정">
-          <Link
-            href="/login"
-            className="flex w-full items-center justify-between border-b border-[var(--cb-line)] px-1 py-[15px] text-left text-[14px] transition hover:text-[var(--cb-yellow)]"
-          >
-            <span>로그아웃</span>
-            <span className="flex items-center gap-1.5 text-[13px] text-[var(--cb-text-3)]">
-              <ChevronRight size={16} />
-            </span>
-          </Link>
+          <ProfileMenuButton label="로그아웃" onClick={showWipNotice} />
           <ProfileMenuButton label="회원 탈퇴" muted onClick={showWipNotice} />
         </ProfileMenuGroup>
       </div>
