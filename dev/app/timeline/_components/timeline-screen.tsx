@@ -371,8 +371,8 @@ export function TimelineScreen({ roomId }: { roomId: number | null }) {
       )}
 
       <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-[var(--cb-line)] bg-[rgba(14,14,16,.96)] px-4 pb-[calc(14px+env(safe-area-inset-bottom))] pt-3 backdrop-blur">
-        <TimelineAction href={timetableHref} icon={<Edit3 size={17} />} label="수정" step="CB-11" ariaLabel="수정 CB-11" />
-        <TimelineAction href={mapHref} icon={<MapIcon size={17} />} label="지도" step="CB-12" ariaLabel="지도 CB-12" />
+        <TimelineAction href={timetableHref} icon={<Edit3 size={17} />} label="수정" />
+        <TimelineAction href={mapHref} icon={<MapIcon size={17} />} label="지도" />
       </div>
     </div>
   );
@@ -542,24 +542,18 @@ function TimelineAction({
   href,
   icon,
   label,
-  step,
-  ariaLabel,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
-  step: string;
-  ariaLabel?: string;
 }) {
   return (
     <Link
       href={href}
-      aria-label={ariaLabel}
       className="inline-flex h-[46px] items-center justify-center gap-1.5 rounded-[var(--r-md)] border border-[var(--cb-line)] bg-[var(--cb-surface-2)] text-[12.5px] font-semibold text-[var(--cb-text)] transition duration-150 hover:bg-[var(--cb-surface-3)] active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cb-yellow)]"
     >
       <span className="text-[var(--cb-yellow)]">{icon}</span>
       {label}
-      <span className="text-[9px] font-bold text-[var(--cb-text-3)]">{step}</span>
     </Link>
   );
 }

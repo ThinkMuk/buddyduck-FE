@@ -1645,11 +1645,11 @@ describe("BuddyDuckApp screens", () => {
 
     // Bottom actions still route to CB-11 edit / CB-12 map, now carrying ?roomId so the
     // schedule context survives the hop (CB-11 bootstraps its draft from ?roomId=).
-    expect(screen.getByRole("link", { name: /수정\s+CB-11/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "수정" })).toHaveAttribute(
       "href",
       "/timetable?roomId=10",
     );
-    expect(screen.getByRole("link", { name: /지도\s+CB-12/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "지도" })).toHaveAttribute(
       "href",
       "/map?roomId=10",
     );
