@@ -14,6 +14,7 @@ export function LoginScreen() {
           height={96}
           priority
           src="/images/concert-buddy-logo.png"
+          unoptimized
           width={96}
         />
         <h1 className="mt-[22px] text-[28px] font-extrabold leading-tight tracking-normal">
@@ -39,6 +40,7 @@ export function LoginScreen() {
               height={90}
               priority
               src="/images/kakao_login/ko/kakao_login_large_wide.png"
+              unoptimized
               width={600}
             />
           </Link>
